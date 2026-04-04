@@ -21,19 +21,33 @@ const anomalyRoutes    = require('./routes/anomalies');
 const app    = express();
 const server = http.createServer(app);
 
-const allowedOrigins = process.env.NODE_ENV === 'production'
-  ? [
-      process.env.FRONTEND_URL || 'https://pm-backend-1-ym3w.onrender.com',
-      'https://pm-backend-1-ym3w.onrender.com',
-    ]
-  : ['http://localhost:5173', 'http://localhost:3000', 'http://127.0.0.1:5173'];
+// ─── CORS — must be ABOVE all routes ─────────────────────────────────────────
+const corsOptions = {
+  origin: [
+    'https://pm-frontend-qxlo.onrender.com',
+    'https://pm-backend-1-ym3w.onrender.com',
+    process.env.FRONTEND_URL,
+    // Dev origins
+    'http://localhost:5173',
+    'http://localhost:3000',
+    'http://127.0.0.1:5173',
+  ].filter(Boolean),
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  credentials: true,
+};
 
-const io     = new Server(server, {
-  cors: { origin: allowedOrigins, methods: ['GET', 'POST'] },
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions)); // handle preflight for all routes
+
+const io = new Server(server, {
+  cors: {
+    origin: corsOptions.origin,
+    methods: ['GET', 'POST'],
+    credentials: true,
+  },
 });
 
-// ─── Middleware ───────────────────────────────────────────────────────────────
-app.use(cors({ origin: allowedOrigins, credentials: true }));
+// ─── Body parsers ─────────────────────────────────────────────────────────────
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
