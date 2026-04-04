@@ -55,6 +55,10 @@ app.get('/api/health', (_, res) => {
   res.json({ status: 'OK', timestamp: new Date(), version: '2.0.0' });
 });
 
+app.get('/', (req, res) => {
+  res.send('Backend Running 🚀');
+});
+
 // ─── Serve Static Frontend (Deployment Fix) ──────────────────────────────────
 const path = require('path');
 const fs = require('fs');
