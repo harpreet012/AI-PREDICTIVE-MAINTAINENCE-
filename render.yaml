@@ -1,0 +1,34 @@
+services:
+  # ─── Backend + Frontend (served as static from same service) ─────────────────
+  - type: web
+    name: pm-backend
+    runtime: node
+    rootDir: .
+    buildCommand: "npm run install-all && npm run build"
+    startCommand: "cd server && node server.js"
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "5000"
+      - key: MONGODB_URI
+        sync: false          # set manually in dashboard
+      - key: JWT_SECRET
+        sync: false          # set manually in dashboard
+      - key: OPENAI_API_KEY
+        sync: false          # set manually in dashboard
+      - key: ML_SERVICE_URL
+        sync: false          # set to your ml-service URL after deploy
+      - key: FRONTEND_URL
+        sync: false          # set to this service's URL after deploy
+
+  # ─── Python ML Service ────────────────────────────────────────────────────────
+  - type: web
+    name: pm-ml-service
+    runtime: python
+    rootDir: ml-service
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python app.py"
+    envVars:
+      - key: PORT
+        value: "5001"
