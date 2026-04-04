@@ -244,7 +244,7 @@ async function analyzeReading(reading, equipmentType = 'default', historicalStat
   // Call Python Flask ML API
   let mlResult = { anomaly: false, confidence: 0, feature_importance: {} };
   try {
-    const mlUrl = process.env.ML_SERVICE_URL || 'http://127.0.0.1:5001/predict';
+    const mlUrl = process.env.ML_SERVICE_URL || 'https://pm-ml-service.onrender.com/predict';
     const res = await axios.post(mlUrl, reading, { timeout: 2000 });
     mlResult = res.data;
   } catch (err) {

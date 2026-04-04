@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, useRef } from 'react';
 import { io } from 'socket.io-client';
+import { BACKEND_URL } from '../config';
 
 const SocketContext = createContext(null);
 
@@ -12,7 +13,8 @@ export function SocketProvider({ children }) {
   const alertCallbacksRef               = useRef([]);
 
   useEffect(() => {
-    const s = io('http://127.0.0.1:5000', { transports: ['websocket'] });
+    const socketUrl = BACKEND_URL || window.location.origin;
+    const s = io(socketUrl, { transports: ['websocket', 'polling'] });
 
     s.on('connect',    () => { setSocket(s); setConnected(true);  console.log('🔌 Socket connected'); });
     s.on('disconnect', () => {               setConnected(false); console.log('❌ Socket disconnected'); });
