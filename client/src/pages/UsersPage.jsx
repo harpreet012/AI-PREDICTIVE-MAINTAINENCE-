@@ -5,9 +5,9 @@ import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import PageTransition from '../components/PageTransition';
 import ConfirmModal from '../components/ConfirmModal';
-import { BACKEND_URL } from '../config';
+import { API_URL } from '../config';
 
-const API = `${BACKEND_URL}/api`;
+const API = API_URL;
 
 const ROLES = ['admin', 'operator', 'viewer'];
 const ROLE_COLORS = { admin: '#f59e0b', operator: '#3b82f6', viewer: '#64748b' };
