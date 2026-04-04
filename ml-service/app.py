@@ -41,6 +41,10 @@ def get_feature_importance(features_dict, stats):
     # Sort by highest importance
     return dict(sorted(importance.items(), key=lambda item: item[1], reverse=True))
 
+@app.route('/')
+def home():
+    return 'ML Service Running 🚀'
+
 @app.route('/predict', methods=['POST'])
 def predict():
     if not model or not stats:
@@ -96,7 +100,7 @@ def predict():
 
 @app.route('/health', methods=['GET'])
 def health():
-    return jsonify({"status": "healthy", "model_loaded": model is not None})
+    return jsonify({"status": "ok", "model_loaded": model is not None})
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5001))
