@@ -3,8 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import { Send, X, Minimize2, Maximize2, Trash2, ChevronDown } from 'lucide-react';
-
-const API = '/api';
+import { API_URL } from '../config';
 
 const AIBotIcon = ({ size = 24, className }) => (
   <svg width={size} height={size} viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" className={className}>
@@ -147,6 +146,7 @@ export default function ChatBot() {
   }, [messages, typing]);
 
   const sendMessage = useCallback(async (text = input.trim()) => {
+    console.log('Clicked send:', text);
     if (!text || typing) return;
     setShowQuick(false);
     const userMsg = { role: 'user', text, time: new Date() };
@@ -155,10 +155,12 @@ export default function ChatBot() {
     setTyping(true);
 
     try {
-      const { data } = await axios.post(`${API}/chat`,
+      console.log('Sending to:', `${API_URL}/chat`);
+      const { data } = await axios.post(`${API_URL}/chat`,
         { message: text, context: {} },
         { headers: { Authorization: `Bearer ${token}` } }
       );
+      console.log('Response:', data);
       const botMsg = {
         role: 'assistant',
         text: data.reply,
@@ -169,6 +171,7 @@ export default function ChatBot() {
       setMessages(prev => [...prev, botMsg]);
       if (!open) setUnread(n => n + 1);
     } catch (err) {
+      console.error('Chat error:', err);
       setMessages(prev => [...prev, {
         role: 'assistant',
         text: '⚠️ Could not connect to AI service. Please make sure the server is running and try again.',

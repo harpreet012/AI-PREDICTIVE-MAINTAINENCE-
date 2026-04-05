@@ -151,14 +151,9 @@ export default function AnomalyPage() {
       }
     } catch (err) {
       console.error('Anomaly fetch error:', err);
-      /* Graceful fallback — simulate data so UI still works */
-      const fallback = [
-        { id: 1, machine: 'CNC Machine A', issue: 'High Temperature', severity: 'Critical', score: 92, confidence: 94, timestamp: new Date().toISOString(), prediction: 'Spindle failure within 2 hours', rootCause: 'Coolant system blockage', recommendation: 'Immediate shutdown and inspect coolant lines.' },
-        { id: 2, machine: 'Robotic Arm B',  issue: 'Vibration Spike',  severity: 'Warning',  score: 67, confidence: 82, timestamp: new Date(Date.now() - 5000).toISOString(), prediction: 'Joint wear increasing', rootCause: 'Lack of lubrication', recommendation: 'Schedule maintenance at next shift change.' },
-        { id: 3, machine: 'Conveyor Belt C', issue: 'Speed Fluctuation', severity: 'Normal', score: 22, confidence: 90, timestamp: new Date(Date.now() - 15000).toISOString(), prediction: 'No immediate failure likely', rootCause: 'Minor load imbalance', recommendation: 'Monitor load distribution.' },
-      ];
-      setAnomalies(fallback);
-      setGraphData(generateGraphPoints(fallback));
+      // No fake data — show empty state so user knows API is unreachable
+      setAnomalies([]);
+      setGraphData([]);
       setLastRefresh(new Date());
     } finally {
       setLoading(false);
