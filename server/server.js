@@ -72,6 +72,10 @@ app.get('/api/health', (_, res) => {
   res.json({ status: 'OK', timestamp: new Date(), version: '2.0.0' });
 });
 
+app.get('/api/dashboard', (req, res) => {
+  res.json({ success: true, message: "Dashboard data fetched successfully", data: {} });
+});
+
 // ─── /api/upload — Simple JSON bulk-insert (for direct fetch() calls) ─────────
 const mongoose   = require('mongoose');
 const axios      = require('axios');
