@@ -204,23 +204,8 @@ export default function Dashboard() {
   const [loading,   setLoading]         = useState(true);
   const [refreshing, setRefreshing]     = useState(false);
   const [oee, setOee] = useState({ availability: 0, performance: 0, quality: 0, overall: 0 });
-  const [apiData, setApiData] = useState(null);
   const { liveReadings, fleetSummary, liveAlerts } = useSocket();
   const navigate = useNavigate();
-
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const res = await axios.get("https://pm-backend-1-ym3w.onrender.com/api/dashboard");
-        setApiData(res.data);
-        console.log("Dashboard API Data:", res.data);
-      } catch (err) {
-        console.log(err);
-      }
-    };
-
-    fetchData();
-  }, []);
 
   const fetchData = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);

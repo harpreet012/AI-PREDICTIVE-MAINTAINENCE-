@@ -68,7 +68,11 @@ export default function DataImportPage() {
       setPreview(data.rows);
       setTotal(data.total);
       console.log('Parsed rows:', data.total, 'Sample:', data.rows?.[0]);
-      toast.success(`Parsed ${data.total} rows successfully!`);
+      toast.success(`Parsed ${data.total} rows! Auto-importing...`);
+      
+      setTimeout(() => {
+        handleImport(f);
+      }, 1000);
     } catch (err) {
       toast.error('Could not parse file: ' + (err?.response?.data?.error || err.message));
       setFile(null);
@@ -88,12 +92,13 @@ export default function DataImportPage() {
     maxSize: 10 * 1024 * 1024,
   });
 
-  const handleImport = async () => {
-    if (!file) return;
+  const handleImport = async (fileToImport) => {
+    const activeFile = fileToImport && fileToImport instanceof File ? fileToImport : file;
+    if (!activeFile) return;
     setLoading(true);
     try {
       const fd = new FormData();
-      fd.append('file', file);
+      fd.append('file', activeFile);
       console.log('Uploading file to:', `${API_URL}/import/equipment`);
       const { data } = await axios.post(`${API_URL}/import/equipment`, fd, {
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' }
