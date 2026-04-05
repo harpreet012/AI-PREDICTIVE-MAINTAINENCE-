@@ -6,8 +6,7 @@ import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import { Upload, FileSpreadsheet, CheckCircle, AlertCircle, Eye, Trash2, Download } from 'lucide-react';
 import PageTransition from '../components/PageTransition';
-
-const API = '/api';
+import { API_URL, ML_URL } from '../config';
 
 const SAMPLE_DATA = [
   { UID: 1, ProductType: 'Extruder',         Humidity: 5.88,  Temperature: 66.17, Age: 13, Quantity: 39764, MTTF: 69  },
@@ -60,11 +59,13 @@ export default function DataImportPage() {
     try {
       const fd = new FormData();
       fd.append('file', f);
-      const { data } = await axios.post(`${API}/import/preview`, fd, {
+      console.log('Previewing file:', f.name);
+      const { data } = await axios.post(`${API_URL}/import/preview`, fd, {
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' }
       });
       setPreview(data.rows);
       setTotal(data.total);
+      console.log('Parsed rows:', data.total, 'Sample:', data.rows?.[0]);
       toast.success(`Parsed ${data.total} rows successfully!`);
     } catch (err) {
       toast.error('Could not parse file: ' + (err?.response?.data?.error || err.message));
@@ -91,12 +92,32 @@ export default function DataImportPage() {
     try {
       const fd = new FormData();
       fd.append('file', file);
-      const { data } = await axios.post(`${API}/import/equipment`, fd, {
+      console.log('Uploading file to:', `${API_URL}/import/equipment`);
+      const { data } = await axios.post(`${API_URL}/import/equipment`, fd, {
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' }
       });
+      console.log('Import success:', data);
       setResult(data);
       toast.success(`✅ Import complete! ${data.created} created, ${data.updated} updated.`);
+
+      // Call ML service with a sample of the parsed data for anomaly prediction
+      try {
+        const sampleRow = preview?.[0];
+        if (sampleRow) {
+          console.log('Calling ML service with sample:', sampleRow);
+          const mlRes = await fetch(`${ML_URL}/predict`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(sampleRow),
+          });
+          const mlData = await mlRes.json();
+          console.log('ML Predictions:', mlData);
+        }
+      } catch (mlErr) {
+        console.warn('ML service call failed (non-critical):', mlErr.message);
+      }
     } catch (err) {
+      console.error('Import failed:', err);
       toast.error(err?.response?.data?.error || 'Import failed');
     } finally {
       setLoading(false);

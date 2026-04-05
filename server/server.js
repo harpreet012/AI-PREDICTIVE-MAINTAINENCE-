@@ -72,6 +72,40 @@ app.get('/api/health', (_, res) => {
   res.json({ status: 'OK', timestamp: new Date(), version: '2.0.0' });
 });
 
+// ─── /api/upload — Simple JSON bulk-insert (for direct fetch() calls) ─────────
+const mongoose   = require('mongoose');
+const axios      = require('axios');
+const RawDataSchema = new mongoose.Schema({}, { strict: false, timestamps: true });
+const RawData    = mongoose.models.RawData || mongoose.model('RawData', RawDataSchema, 'rawUploads');
+
+app.post('/api/upload', async (req, res) => {
+  try {
+    const data = Array.isArray(req.body) ? req.body : [req.body];
+    if (!data || data.length === 0) {
+      return res.status(400).json({ error: 'No data provided' });
+    }
+
+    const saved = await RawData.insertMany(data);
+    console.log('Saved records:', saved.length);
+
+    // Call ML service for predictions on each record
+    const ML_API = process.env.ML_SERVICE_URL || 'https://pm-ml-service.onrender.com/predict';
+    const predictions = [];
+    for (const record of data.slice(0, 5)) { // limit to 5 to avoid timeout
+      try {
+        const mlRes = await axios.post(ML_API, record, { timeout: 3000 });
+        predictions.push(mlRes.data);
+      } catch { predictions.push({ error: 'ML unavailable' }); }
+    }
+    console.log('ML Predictions:', predictions);
+
+    res.json({ success: true, count: saved.length, predictions });
+  } catch (err) {
+    console.error('Upload error:', err);
+    res.status(500).json({ error: 'Upload failed: ' + err.message });
+  }
+});
+
 app.get('/', (req, res) => {
   res.send('Backend Running 🚀');
 });
