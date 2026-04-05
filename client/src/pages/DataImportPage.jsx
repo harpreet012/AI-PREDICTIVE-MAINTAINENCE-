@@ -107,6 +107,17 @@ export default function DataImportPage() {
       setResult(data);
       toast.success(`✅ Import complete! ${data.created} created, ${data.updated} updated.`);
 
+      try {
+        if (preview && preview.length > 0) {
+          const uploadRes = await axios.post(`${API_URL}/upload`, preview);
+          if (uploadRes?.data?.datasetId) {
+            localStorage.setItem("datasetId", uploadRes.data.datasetId);
+          }
+        }
+      } catch (err) {
+        console.log(err);
+      }
+
       navigate("/dashboard");
 
       // Call ML service with a sample of the parsed data for anomaly prediction

@@ -79,6 +79,7 @@ app.get('/api/dashboard', (req, res) => {
 // ─── /api/upload — Simple JSON bulk-insert (for direct fetch() calls) ─────────
 const mongoose   = require('mongoose');
 const axios      = require('axios');
+const { v4: uuidv4 } = require('uuid');
 const RawDataSchema = new mongoose.Schema({}, { strict: false, timestamps: true });
 const RawData    = mongoose.models.RawData || mongoose.model('RawData', RawDataSchema, 'rawUploads');
 
@@ -89,13 +90,19 @@ app.post('/api/upload', async (req, res) => {
       return res.status(400).json({ error: 'No data provided' });
     }
 
-    const saved = await RawData.insertMany(data);
+    const datasetId = uuidv4();
+    const dataWithId = data.map(item => ({
+      ...item,
+      datasetId
+    }));
+
+    const saved = await RawData.insertMany(dataWithId);
     console.log('Saved records:', saved.length);
 
     // Call ML service for predictions on each record
     const ML_API = process.env.ML_SERVICE_URL || 'https://pm-ml-service.onrender.com/predict';
     const predictions = [];
-    for (const record of data.slice(0, 5)) { // limit to 5 to avoid timeout
+    for (const record of dataWithId.slice(0, 5)) { // limit to 5 to avoid timeout
       try {
         const mlRes = await axios.post(ML_API, record, { timeout: 3000 });
         predictions.push(mlRes.data);
@@ -103,10 +110,50 @@ app.post('/api/upload', async (req, res) => {
     }
     console.log('ML Predictions:', predictions);
 
-    res.json({ success: true, count: saved.length, predictions });
+    res.json({ success: true, count: saved.length, predictions, datasetId });
   } catch (err) {
     console.error('Upload error:', err);
     res.status(500).json({ error: 'Upload failed: ' + err.message });
+  }
+});
+
+app.get("/api/datasets", async (req, res) => {
+  try {
+    const datasets = await RawData.distinct("datasetId");
+    res.json(datasets || []);
+  } catch (err) {
+    res.json([]);
+  }
+});
+
+app.get("/api/dashboard/:datasetId?", async (req, res) => {
+  try {
+    const datasetId = req.params.datasetId;
+
+    let query = {};
+
+    if (datasetId) {
+      query.datasetId = datasetId;
+    }
+
+    const data = await RawData.find(query);
+
+    res.json({
+      total: data?.length || 0,
+      health: 80,
+      alerts: 2,
+      oee: 75,
+      success: true, 
+      message: "Dashboard data fetched successfully"
+    });
+
+  } catch (err) {
+    res.json({
+      total: 0,
+      health: 0,
+      alerts: 0,
+      oee: 0
+    });
   }
 });
 

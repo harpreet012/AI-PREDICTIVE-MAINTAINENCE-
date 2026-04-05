@@ -204,8 +204,35 @@ export default function Dashboard() {
   const [loading,   setLoading]         = useState(true);
   const [refreshing, setRefreshing]     = useState(false);
   const [oee, setOee] = useState({ availability: 0, performance: 0, quality: 0, overall: 0 });
+  const [datasets, setDatasets] = useState([]);
+  const [apiData, setApiData] = useState({});
   const { liveReadings, fleetSummary, liveAlerts } = useSocket();
   const navigate = useNavigate();
+
+  const datasetId = localStorage.getItem("datasetId") || "";
+
+  useEffect(() => {
+    axios
+      .get("https://pm-backend-1-ym3w.onrender.com/api/datasets")
+      .then(res => setDatasets(res?.data || []))
+      .catch(() => setDatasets([]));
+  }, []);
+
+  useEffect(() => {
+    const fetchApiData = async () => {
+      try {
+        const url = datasetId
+          ? `https://pm-backend-1-ym3w.onrender.com/api/dashboard/${datasetId}`
+          : `https://pm-backend-1-ym3w.onrender.com/api/dashboard`;
+        const res = await axios.get(url);
+        setApiData(res?.data || {});
+      } catch (err) {
+        console.log(err);
+        setApiData({});
+      }
+    };
+    fetchApiData();
+  }, [datasetId]);
 
   const fetchData = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -318,6 +345,27 @@ export default function Dashboard() {
   return (
     <PageTransition>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+      {/* SAFE dropdown UI */}
+      {datasets.length > 0 && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: -8 }}>
+          <select
+            style={{ background: '#121821', color: '#f0f6ff', border: '1px solid rgba(59,130,246,0.3)', padding: '6px 12px', borderRadius: 8, outline: 'none' }}
+            value={datasetId}
+            onChange={(e) => {
+              localStorage.setItem("datasetId", e.target.value);
+              window.location.reload();
+            }}
+          >
+            <option value="">All Datasets (Default)</option>
+            {datasets.map((id, i) => (
+              <option key={i} value={id}>
+                Dataset {i + 1}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {/* ── KPI Stats & OEE ──────────────────────── */}
       <div className="grid-2" style={{ marginBottom: 0 }}>
