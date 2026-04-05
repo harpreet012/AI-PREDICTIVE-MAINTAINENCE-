@@ -211,7 +211,7 @@ export default function Dashboard() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const res = await axios.get("YOUR_BACKEND_URL/dashboard");
+        const res = await axios.get("https://pm-backend-1-ym3w.onrender.com/api/dashboard");
         setApiData(res.data);
         console.log("Dashboard API Data:", res.data);
       } catch (err) {
