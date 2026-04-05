@@ -109,10 +109,6 @@ export default function DataImportPage() {
 
       navigate("/dashboard");
 
-      setTimeout(() => {
-        window.location.reload();
-      }, 500);
-
       // Call ML service with a sample of the parsed data for anomaly prediction
       try {
         const sampleRow = preview?.[0];
