@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
+import { useNavigate } from 'react-router-dom';
 import { Upload, FileSpreadsheet, CheckCircle, AlertCircle, Eye, Trash2, Download } from 'lucide-react';
 import PageTransition from '../components/PageTransition';
 import { API_URL, ML_URL } from '../config';
@@ -40,6 +41,7 @@ function StepBadge({ step, label, active, done }) {
 }
 
 export default function DataImportPage() {
+  const navigate = useNavigate();
   const [file,       setFile]       = useState(null);
   const [preview,    setPreview]    = useState(null);
   const [total,      setTotal]      = useState(0);
@@ -99,6 +101,12 @@ export default function DataImportPage() {
       console.log('Import success:', data);
       setResult(data);
       toast.success(`✅ Import complete! ${data.created} created, ${data.updated} updated.`);
+
+      navigate("/dashboard");
+
+      setTimeout(() => {
+        window.location.reload();
+      }, 500);
 
       // Call ML service with a sample of the parsed data for anomaly prediction
       try {

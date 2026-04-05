@@ -6,6 +6,7 @@ import GaugeMeter from '../components/GaugeMeter';
 import FactoryFloor from '../components/FactoryFloor';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
 import {
   Server, AlertTriangle, Activity, TrendingUp, TrendingDown,
   Minus, Shield, Clock, Zap, Cpu, ThermometerSun, Gauge, BarChart3,
@@ -203,8 +204,23 @@ export default function Dashboard() {
   const [loading,   setLoading]         = useState(true);
   const [refreshing, setRefreshing]     = useState(false);
   const [oee, setOee] = useState({ availability: 0, performance: 0, quality: 0, overall: 0 });
+  const [apiData, setApiData] = useState(null);
   const { liveReadings, fleetSummary, liveAlerts } = useSocket();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const res = await axios.get("YOUR_BACKEND_URL/dashboard");
+        setApiData(res.data);
+        console.log("Dashboard API Data:", res.data);
+      } catch (err) {
+        console.log(err);
+      }
+    };
+
+    fetchData();
+  }, []);
 
   const fetchData = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
