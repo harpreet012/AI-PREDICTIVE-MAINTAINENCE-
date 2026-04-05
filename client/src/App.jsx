@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { HashRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AnimatePresence, motion } from 'framer-motion';
 import { SocketProvider } from './context/SocketContext';
@@ -97,7 +97,7 @@ export default function App() {
   return (
     <AuthProvider>
       <SocketProvider>
-        <BrowserRouter>
+        <HashRouter>
           <AppShell />
           <Toaster
             position="bottom-right"
@@ -107,7 +107,7 @@ export default function App() {
               error:   { iconTheme: { primary: '#ef4444', secondary: '#101929' } },
             }}
           />
-        </BrowserRouter>
+        </HashRouter>
       </SocketProvider>
     </AuthProvider>
   );
