@@ -5,7 +5,7 @@ const XLSX     = require('xlsx');
 const Equipment = require('../models/Equipment');
 const SensorReading = require('../models/SensorReading');
 const { protect } = require('../middleware/auth');
-
+const axios = require('axios');
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 // Map ProductType from sample data to Equipment type enum
@@ -209,6 +209,13 @@ router.post('/equipment', protect, upload.single('file'), async (req, res) => {
     }
     
     readings = readingsToInsert.length;
+    
+    // Trigger dynamic background training to maintain peak accuracy on this dataset
+    const mlTrainUrl = (process.env.ML_SERVICE_URL ? process.env.ML_SERVICE_URL.replace('/predict', '') : 'http://localhost:5001') + '/train';
+    axios.post(mlTrainUrl, { data: rows }).catch(err => {
+      console.warn('Background ML training trigger failed:', err.message);
+    });
+
     res.json({ success: true, message: `Data read & predictions processed`, created, updated, readings, total: rows.length });
   } catch (err) {
     console.error('Import error:', err);

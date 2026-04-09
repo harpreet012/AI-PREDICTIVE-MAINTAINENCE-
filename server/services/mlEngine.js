@@ -245,7 +245,11 @@ async function analyzeReading(reading, equipmentType = 'default', historicalStat
   let mlResult = { anomaly: false, confidence: 0, feature_importance: {} };
   try {
     const mlUrl = process.env.ML_SERVICE_URL || 'https://pm-ml-service.onrender.com/predict';
-    const res = await axios.post(mlUrl, reading, { timeout: 2000 });
+    
+    // Unpack rawData into root object so ML model can dynamically parse all features
+    const payload = { ...reading, ...(reading.rawData || {}) };
+    
+    const res = await axios.post(mlUrl, payload, { timeout: 2000 });
     mlResult = res.data;
   } catch (err) {
     console.error('ML Service offline or error, falling back to JS heuristic.', err.message);
