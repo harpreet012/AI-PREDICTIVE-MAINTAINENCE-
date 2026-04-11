@@ -4,7 +4,6 @@ import pickle
 import os
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import IsolationForest
 from sklearn.preprocessing import StandardScaler
 
 app = Flask(__name__)
@@ -26,7 +25,8 @@ def load_model():
             scaler = artifact.get('scaler')
             stats = artifact.get('stats')
             features = artifact.get('features', ['temperature', 'vibration', 'pressure', 'rpm', 'current'])
-        print("✅ ML Model and Scaler loaded successfully!")
+        model_type = type(model).__name__
+        print(f"✅ ML Model loaded successfully! Type: {model_type}")
     except Exception as e:
         print(f"❌ Failed to load model. Did you run train.py first? Error: {e}")
         model, scaler, stats, features = None, None, None, []
@@ -84,18 +84,32 @@ def predict():
         else:
             X_scaled = X
         
-        # Isolation Forest prediction: 1 (normal), -1 (anomaly)
-        pred = model.predict(X_scaled)[0]
-        is_anomaly = bool(pred == -1)
+        # Detect model type and make appropriate predictions
+        model_type = type(model).__name__
+        is_anomaly = False
+        confidence = 50.0
         
-        score = model.decision_function(X_scaled)[0] 
-        
-        # Map score to a confidence scale
-        if is_anomaly:
-            confidence = min(100, max(50, 50 + abs(score) * 200))
-        else:
-            confidence = min(100, max(50, 50 + score * 200))
+        if 'RandomForest' in model_type:
+            # RandomForestClassifier: 0=normal, 1=anomaly
+            pred = model.predict(X_scaled)[0]
+            is_anomaly = bool(pred == 1)
             
+            # Get probability scores for confidence
+            probs = model.predict_proba(X_scaled)[0]
+            confidence = round(max(probs) * 100, 1)
+            
+        elif 'IsolationForest' in model_type:
+            # IsolationForest: 1=normal, -1=anomaly
+            pred = model.predict(X_scaled)[0]
+            is_anomaly = bool(pred == -1)
+            
+            score = model.decision_function(X_scaled)[0]
+            # Map score to a confidence scale
+            if is_anomaly:
+                confidence = min(100, max(50, 50 + abs(score) * 200))
+            else:
+                confidence = min(100, max(50, 50 + score * 200))
+        
         feature_importance_map = {}
         if is_anomaly and stats:
             # Map values back to a dict for importance calc
@@ -106,7 +120,7 @@ def predict():
             "anomaly": is_anomaly,
             "confidence": round(confidence, 1),
             "feature_importance": feature_importance_map,
-            "raw_score": float(score)
+            "model_type": model_type
         })
 
     except Exception as e:
@@ -116,6 +130,8 @@ def predict():
 def train():
     global model, scaler, stats, features
     try:
+        from sklearn.ensemble import IsolationForest
+        
         body = request.json
         rows = body.get('data', [])
         
@@ -139,7 +155,7 @@ def train():
         new_scaler = StandardScaler()
         scaled_data = new_scaler.fit_transform(numeric_df)
         
-        # Train robust Isolation Forest
+        # Train robust Isolation Forest for dynamic retraining (unsupervised)
         new_model = IsolationForest(n_estimators=150, contamination='auto', max_samples='auto', random_state=42)
         new_model.fit(scaled_data)
         
