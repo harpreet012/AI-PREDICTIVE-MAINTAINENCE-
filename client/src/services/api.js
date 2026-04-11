@@ -53,11 +53,12 @@ export const alertAPI = {
 
 // Analytics
 export const analyticsAPI = {
-  getOverview:    ()        => api.get('/analytics/overview'),
-  getHealthTrend: (params)  => api.get('/analytics/health-trend', { params }),
-  getRiskMatrix:  ()        => api.get('/analytics/risk-matrix'),
-  getAnomalies:   (params)  => api.get('/analytics/anomalies', { params }),
+  getOverview:    ()           => api.get('/analytics/overview'),
+  getHealthTrend: (params)     => api.get('/analytics/health-trend', { params }),
+  getRiskMatrix:  ()           => api.get('/analytics/risk-matrix'),
+  getAnomalies:   (params)     => api.get('/analytics/anomalies', { params }),
   getCorrelation: (id, params) => api.get(`/analytics/correlation/${id}`, { params }),
+  getCalendar:    (days = 15)  => api.get('/analytics/calendar', { params: { days } }),
 };
 
 // Maintenance

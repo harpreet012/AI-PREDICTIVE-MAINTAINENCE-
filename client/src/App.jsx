@@ -18,6 +18,7 @@ import UsersPage       from './pages/UsersPage';
 import LoginPage       from './pages/LoginPage';
 import RegisterPage    from './pages/RegisterPage';
 import AnomalyPage     from './pages/AnomalyPage';
+import CalendarPage    from './pages/CalendarPage';
 import './index.css';
 
 function ProtectedRoute({ children }) {
@@ -56,6 +57,7 @@ function AnimatedRoutes() {
         <Route path="/import" element={<ProtectedRoute><DataImportPage /></ProtectedRoute>} />
         <Route path="/users" element={<ProtectedRoute><UsersPage /></ProtectedRoute>} />
         <Route path="/anomalies" element={<ProtectedRoute><AnomalyPage /></ProtectedRoute>} />
+        <Route path="/calendar"  element={<ProtectedRoute><CalendarPage /></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AnimatePresence>

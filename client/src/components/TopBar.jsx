@@ -13,6 +13,7 @@ const PAGE_META = {
   '/maintenance': { title: 'Maintenance',      subtitle: 'Schedule & maintenance history',    icon: '🔧' },
   '/import':      { title: 'Data Import',      subtitle: 'Upload Excel / CSV machine data',   icon: '📂' },
   '/users':       { title: 'User Management',  subtitle: 'Access control & roles',            icon: '👥' },
+  '/calendar':    { title: 'Calendar',         subtitle: 'Real-time per-day operations heatmap', icon: '📅' },
 };
 
 export default function TopBar() {

@@ -175,4 +175,82 @@ router.get('/correlation/:equipmentId', async (req, res) => {
   }
 });
 
+// GET per-day calendar data (heatmap) — last N days
+router.get('/calendar', async (req, res) => {
+  try {
+    const days = Math.min(parseInt(req.query.days) || 15, 30);
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+    // Aggregate sensor readings per day
+    const sensorByDay = await SensorReading.aggregate([
+      { $match: { timestamp: { $gte: since }, userId: req.user._id } },
+      {
+        $group: {
+          _id: {
+            $dateToString: { format: '%Y-%m-%d', date: '$timestamp' },
+          },
+          avgHealth:      { $avg: '$healthScore' },
+          maxAnomalyScore:{ $max: '$anomalyScore' },
+          anomalyCount:   { $sum: { $cond: ['$isAnomaly', 1, 0] } },
+          totalReadings:  { $sum: 1 },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]);
+
+    // Aggregate alert counts per day
+    const alertByDay = await Alert.aggregate([
+      { $match: { createdAt: { $gte: since }, userId: req.user._id } },
+      {
+        $group: {
+          _id: {
+            $dateToString: { format: '%Y-%m-%d', date: '$createdAt' },
+          },
+          alertCount:    { $sum: 1 },
+          criticalCount: { $sum: { $cond: [{ $eq: ['$severity', 'critical'] }, 1, 0] } },
+        },
+      },
+    ]);
+
+    // Build a lookup map for alerts
+    const alertMap = alertByDay.reduce((acc, a) => {
+      acc[a._id] = { alertCount: a.alertCount, criticalCount: a.criticalCount };
+      return acc;
+    }, {});
+
+    // Build the full day range (fill gaps with null data)
+    const result = [];
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
+      const dateStr = d.toISOString().split('T')[0];
+      const sensor  = sensorByDay.find(s => s._id === dateStr);
+      const alert   = alertMap[dateStr] || { alertCount: 0, criticalCount: 0 };
+
+      const avgHealth = sensor ? Math.round(sensor.avgHealth || 0) : null;
+      const status = avgHealth === null ? 'no-data'
+        : avgHealth >= 80 ? 'healthy'
+        : avgHealth >= 65 ? 'good'
+        : avgHealth >= 50 ? 'warning'
+        : 'critical';
+
+      result.push({
+        date:           dateStr,
+        dayLabel:       d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
+        avgHealth,
+        anomalyCount:   sensor?.anomalyCount   || 0,
+        maxAnomalyScore:sensor ? Math.round((sensor.maxAnomalyScore || 0) * 100) / 100 : 0,
+        totalReadings:  sensor?.totalReadings   || 0,
+        alertCount:     alert.alertCount,
+        criticalCount:  alert.criticalCount,
+        status,
+        isToday: dateStr === new Date().toISOString().split('T')[0],
+      });
+    }
+
+    res.json({ success: true, data: result, days });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 module.exports = router;

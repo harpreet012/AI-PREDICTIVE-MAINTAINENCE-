@@ -879,3 +879,188 @@ body {
   background: rgba(239,68,68,0.18);
   border-color: rgba(239,68,68,0.45);
 }
+
+/* ─── Calendar Page ─────────────────────────────────────────────────────────── */
+
+/* Clock badge in header */
+.cal-clock-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 12px;
+  background: rgba(99,179,237,0.07);
+  border: 1px solid rgba(99,179,237,0.18);
+  border-radius: 20px;
+  font-size: 12px; color: #94a3b8;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* Day-range selector pill group */
+.cal-day-selector {
+  display: flex; align-items: center; gap: 4px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 3px;
+}
+.cal-day-btn {
+  padding: 4px 12px; border-radius: 20px;
+  border: none; background: transparent;
+  color: var(--text-muted); font-size: 12px; font-weight: 600;
+  cursor: pointer; transition: all 0.18s;
+}
+.cal-day-btn:hover { color: var(--text-primary); background: rgba(255,255,255,0.05); }
+.cal-day-btn.active {
+  background: var(--accent-blue);
+  color: #fff;
+  box-shadow: 0 0 12px rgba(0,210,255,0.35);
+}
+
+/* Legend strip */
+.cal-legend {
+  display: flex; align-items: center; gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* Heatmap wrapper — needed for tooltip positioning */
+.cal-heatmap-wrap { position: relative; }
+
+/* The main CSS grid of day squares */
+.cal-heatmap-grid {
+  display: grid;
+  gap: 10px;
+}
+
+/* Individual day cell */
+.cal-day-cell {
+  aspect-ratio: 1;
+  border-radius: 12px;
+  position: relative;
+  cursor: pointer;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.06);
+  min-height: 60px;
+  transition: border-color 0.18s;
+}
+.cal-day-cell:hover { border-color: rgba(255,255,255,0.18); }
+
+/* Filled colour bg (separate div so we can animate it) */
+.cal-cell-bg {
+  position: absolute; inset: 0;
+  border-radius: 11px;
+  transition: filter 0.2s;
+}
+.cal-day-cell:hover .cal-cell-bg { filter: brightness(1.15); }
+
+/* Text inside the cell */
+.cal-cell-content {
+  position: relative; z-index: 2;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  height: 100%; padding: 4px;
+  text-align: center;
+}
+.cal-cell-day-num {
+  font-size: 16px; font-weight: 800; line-height: 1; letter-spacing: -0.5px;
+}
+.cal-cell-health {
+  font-size: 10px; font-weight: 600; opacity: 0.85; margin-top: 3px;
+}
+/* Anomaly count badge inside cell — small pill at bottom right */
+.cal-cell-badge {
+  position: absolute; bottom: 5px; right: 6px;
+  background: rgba(0,0,0,0.35);
+  color: #fff; font-size: 9px; font-weight: 700;
+  padding: 1px 5px; border-radius: 10px;
+  line-height: 1.5;
+}
+
+/* Today highlight ring */
+.cal-today-ring {
+  position: absolute; inset: -2px;
+  border-radius: 14px;
+  border: 2px solid rgba(255,255,255,0.85);
+  pointer-events: none;
+  z-index: 3;
+}
+.cal-today-ring-outer {
+  border: 2px solid rgba(255,255,255,0.35);
+  inset: -5px; border-radius: 17px;
+}
+
+/* Floating tooltip */
+.cal-tooltip {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  z-index: 200;
+  background: #0d1117;
+  border: 1px solid rgba(99,179,237,0.3);
+  border-radius: 12px;
+  padding: 12px 14px;
+  width: 200px;
+  pointer-events: none;
+  box-shadow: 0 16px 40px rgba(0,0,0,0.7), 0 0 0 1px rgba(99,179,237,0.06);
+  margin-top: -10px;
+}
+.cal-tooltip-date {
+  font-size: 12px; font-weight: 700; color: var(--text-primary); margin-bottom: 4px;
+}
+.cal-tooltip-status {
+  font-size: 11px; font-weight: 600; margin-bottom: 8px; display: flex; align-items: center;
+}
+.cal-tooltip-grid { display: flex; flex-direction: column; gap: 5px; }
+.cal-tt-row { display: flex; justify-content: space-between; align-items: center; }
+.cal-tt-label { font-size: 11px; color: var(--text-muted); }
+.cal-tt-value  { font-size: 12px; font-weight: 700; color: var(--text-primary); }
+
+/* Summary stat cards (4-across) */
+.cal-stat-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.cal-stat-card:hover {
+  border-color: var(--border-bright);
+  box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+}
+
+/* Timeline (bar chart) for daily anomaly/alert counts */
+.cal-timeline-wrap {
+  display: flex; align-items: flex-end; gap: 6px;
+  height: 80px;
+  padding: 0 2px;
+}
+.cal-timeline-col {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; position: relative;
+}
+.cal-timeline-bars {
+  width: 100%; height: 60px;
+  display: flex; align-items: flex-end; gap: 2px;
+  position: relative;
+}
+.cal-tbar {
+  flex: 1; border-radius: 4px 4px 0 0;
+  min-height: 3px;
+  position: absolute; bottom: 0; width: 45%;
+}
+.cal-tbar-anomaly { background: #f59e0b; left: 5%; opacity: 0.85; }
+.cal-tbar-alert   { background: #ef4444; right: 5%; opacity: 0.75; }
+.cal-timeline-label {
+  font-size: 9px; color: var(--text-muted);
+  margin-top: 4px; text-align: center; width: 100%;
+}
+
+/* Responsive tweaks */
+@media (max-width: 1024px) {
+  .cal-heatmap-grid { grid-template-columns: repeat(10, 1fr) !important; }
+  .cal-stat-card-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 768px) {
+  .cal-heatmap-grid { grid-template-columns: repeat(7, 1fr) !important; }
+  .cal-day-cell { min-height: 44px; border-radius: 8px; }
+  .cal-cell-day-num { font-size: 12px; }
+  .cal-cell-health { display: none; }
+  .cal-clock-badge span:first-of-type { display: none; }
+}
+

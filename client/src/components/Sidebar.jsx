@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, Cpu, Bell, BarChart2,
   Wrench, Upload, Users, LogOut, Wifi, WifiOff,
-  ChevronRight, AlertTriangle, Map, ScanSearch,
+  ChevronRight, AlertTriangle, Map, ScanSearch, CalendarDays,
 } from 'lucide-react';
 import SidebarLiveGraph from './SidebarLiveGraph';
 
@@ -13,10 +13,11 @@ const NAV = [
   { to: '/',             label: 'Dashboard',    icon: LayoutDashboard },
   { to: '/equipment',    label: 'Equipment',    icon: Cpu },
   { to: '/digital-twin', label: 'Digital Twin', icon: Map },
-  { to: '/alerts',       label: 'Alerts',       icon: Bell,     badge: 'alerts' },
+  { to: '/alerts',       label: 'Alerts',       icon: Bell,         badge: 'alerts' },
   { to: '/analytics',   label: 'Analytics',   icon: BarChart2 },
   { to: '/maintenance', label: 'Maintenance', icon: Wrench },
-  { to: '/anomalies',   label: 'Anomalies',   icon: ScanSearch, badge: 'anomaly' },
+  { to: '/anomalies',   label: 'Anomalies',   icon: ScanSearch,   badge: 'anomaly' },
+  { to: '/calendar',    label: 'Calendar',    icon: CalendarDays },
 ];
 
 const ADMIN_NAV = [
