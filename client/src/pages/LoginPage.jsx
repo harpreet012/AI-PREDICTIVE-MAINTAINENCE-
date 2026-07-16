@@ -30,7 +30,12 @@ export default function LoginPage() {
       const data = await login(email.trim(), password);
       if (data.success) {
         toast.success(`Welcome back, ${data.user.name}! 👋`);
-        navigate('/');
+        // If admin, redirect to data input page, otherwise go to dashboard
+        if (data.user.role === 'admin') {
+          navigate('/data-input');
+        } else {
+          navigate('/');
+        }
       } else {
         const msg = data.error || 'Login failed. Please check your credentials.';
         setErrorMsg(msg);

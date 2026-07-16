@@ -114,15 +114,17 @@ function useAnomalyToast(anomalies) {
 
 /* ─── Sparkline graph data generator ─────────────────────────────────────── */
 function generateGraphPoints(anomalies) {
+  if (!anomalies || anomalies.length === 0) {
+    return [];
+  }
+  
   const now = Date.now();
-  return Array.from({ length: 20 }, (_, i) => {
+  return anomalies.slice(0, 20).map((a, i) => {
     const t = now - (19 - i) * 4000;
-    const base = 20 + Math.sin(i * 0.6) * 15 + Math.random() * 10;
-    const isAnomaly = (i === 5 || i === 12 || i === 17);
     return {
       t: new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-      score: isAnomaly ? 80 + Math.random() * 18 : base,
-      anomaly: isAnomaly ? 80 + Math.random() * 18 : null,
+      score: a.score || 50,
+      anomaly: a.severity === 'Critical' ? a.score : null,
     };
   });
 }

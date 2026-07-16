@@ -14,6 +14,7 @@ import AnalyticsPage from './pages/AnalyticsPage';
 import DigitalTwinPage from './pages/DigitalTwinPage';
 import MaintenancePage from './pages/MaintenancePage';
 import DataImportPage  from './pages/DataImportPage';
+import DataInputPage   from './pages/DataInputPage';
 import UsersPage       from './pages/UsersPage';
 import LoginPage       from './pages/LoginPage';
 import RegisterPage    from './pages/RegisterPage';
@@ -47,6 +48,7 @@ function AnimatedRoutes() {
       <Routes location={location} key={location.pathname}>
         <Route path="/login"    element={<PublicRoute><LoginPage /></PublicRoute>} />
         <Route path="/register" element={<PublicRoute><RegisterPage /></PublicRoute>} />
+        <Route path="/data-input" element={<ProtectedRoute><DataInputPage /></ProtectedRoute>} />
         <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
         <Route path="/equipment" element={<ProtectedRoute><EquipmentPage /></ProtectedRoute>} />
         <Route path="/equipment/:id" element={<ProtectedRoute><EquipmentDetail /></ProtectedRoute>} />

@@ -1,47 +1,43 @@
 const express = require('express');
 const router = express.Router();
+const Alert = require('../models/Alert');
+const Equipment = require('../models/Equipment');
+const SensorReading = require('../models/SensorReading');
 
-// Mock data generation for Anomalies
-router.get('/', (req, res) => {
+// Get real anomalies from database
+router.get('/', async (req, res) => {
   try {
-    const anomalies = [
-      {
-        id: 1,
-        machine: "CNC Machine A",
-        issue: "High Temperature",
-        severity: "Critical",
-        score: parseInt(process.env.TEST_SCORE || Math.floor(Math.random() * (100 - 85 + 1) + 85)),
-        confidence: 94,
-        timestamp: new Date().toISOString(),
-        prediction: "Spindle failure within 2 hours",
-        rootCause: "Coolant system blockage",
-        recommendation: "Immediate shutdown and inspect coolant lines."
-      },
-      {
-        id: 2,
-        machine: "Robotic Arm B",
-        issue: "Vibration Spike",
-        severity: "Warning",
-        score: parseInt(process.env.TEST_SCORE || Math.floor(Math.random() * (84 - 60 + 1) + 60)),
-        confidence: 82,
-        timestamp: new Date(Date.now() - 5000).toISOString(),
-        prediction: "Joint wear increasing",
-        rootCause: "Lack of lubrication",
-        recommendation: "Schedule maintenance at next shift change."
-      },
-      {
-        id: 3,
-        machine: "Conveyor Belt C",
-        issue: "Speed Fluctuation",
-        severity: "Normal",
-        score: parseInt(process.env.TEST_SCORE || Math.floor(Math.random() * (40 - 10 + 1) + 10)),
-        confidence: 90,
-        timestamp: new Date(Date.now() - 15000).toISOString(),
-        prediction: "No immediate failure likely",
-        rootCause: "Minor load imbalance",
-        recommendation: "Monitor load distribution."
-      }
-    ];
+    const { limit = 50, severity } = req.query;
+    
+    // Build query
+    const query = { acknowledged: false };
+    if (severity && severity !== 'All') {
+      query.severity = severity.toLowerCase();
+    }
+    
+    // Fetch alerts from database
+    const alerts = await Alert.find(query)
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit))
+      .populate('equipmentId', 'name type location')
+      .populate('userId', 'name email');
+    
+    // Transform alerts to anomaly format
+    const anomalies = alerts.map(alert => ({
+      id: alert._id.toString(),
+      machine: alert.equipmentId?.name || 'Unknown Equipment',
+      issue: alert.message,
+      severity: alert.severity.charAt(0).toUpperCase() + alert.severity.slice(1),
+      score: alert.anomalyScore ? Math.round(alert.anomalyScore * 100) : (100 - (alert.healthScore || 50)),
+      confidence: alert.healthScore ? (100 - alert.healthScore + 50) : 75,
+      timestamp: alert.createdAt.toISOString(),
+      prediction: alert.details || 'Predictive analysis based on sensor data',
+      rootCause: alert.type === 'anomaly' ? 'Sensor pattern deviation detected' : 'Threshold exceeded',
+      recommendation: alert.message,
+      equipmentId: alert.equipmentId?._id,
+      sensorValues: alert.sensorValues
+    }));
+    
     res.json({ success: true, count: anomalies.length, data: anomalies });
   } catch (error) {
     console.error('Anomalies Endpoint Error:', error);
