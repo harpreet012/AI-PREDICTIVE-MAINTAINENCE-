@@ -26,7 +26,7 @@ export default function SidebarLiveGraph() {
         <span>Fleet Health (Live)</span>
         <span>{Math.round(data[data.length - 1].health)}%</span>
       </div>
-      <div style={{ height: '60px', width: '100%', position: 'relative' }}>
+      <div style={{ height: '60px', width: '100%', position: 'relative', minHeight: 60 }}>
         {/* HUD grid background effect */}
         <div style={{
           position: 'absolute', inset: 0,
@@ -34,7 +34,7 @@ export default function SidebarLiveGraph() {
           backgroundImage: 'linear-gradient(to right, rgba(0, 194, 168, 0.05) 1px, transparent 1px), linear-gradient(to bottom, rgba(0, 194, 168, 0.05) 1px, transparent 1px)'
         }} />
         
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
           <AreaChart data={data} margin={{ top: 5, right: 0, left: 0, bottom: 0 }}>
             <defs>
               <linearGradient id="colorHealth" x1="0" y1="0" x2="0" y2="1">

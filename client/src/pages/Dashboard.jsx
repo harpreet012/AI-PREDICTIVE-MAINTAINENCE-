@@ -186,11 +186,13 @@ function CriticalMachineCard({ machine, index }) {
 /* ── Mini Sparkline ── */
 function SparkLine({ data, color }) {
   return (
-    <ResponsiveContainer width="100%" height={48}>
-      <LineChart data={data} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
-        <Line type="monotone" dataKey="v" stroke={color} strokeWidth={2} dot={false} />
-      </LineChart>
-    </ResponsiveContainer>
+    <div style={{ width: '100%', minHeight: 48 }}>
+      <ResponsiveContainer width="100%" height={48} minWidth={0} minHeight={0}>
+        <LineChart data={data} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
+          <Line type="monotone" dataKey="v" stroke={color} strokeWidth={2} dot={false} />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
   );
 }
 
@@ -560,8 +562,9 @@ export default function Dashboard() {
             <BarChart3 size={14} style={{ color: '#4b5e78' }} />
           </div>
           {trendData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={180}>
-              <AreaChart data={trendData} margin={{ left: -20, right: 8, top: 12, bottom: 0 }}>
+            <div style={{ width: '100%', minHeight: 180 }}>
+              <ResponsiveContainer width="100%" height={180} minWidth={0} minHeight={0}>
+                <AreaChart data={trendData} margin={{ left: -20, right: 8, top: 12, bottom: 0 }}>
                 <defs>
                   <linearGradient id="gHealth" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%"  stopColor="#10b981" stopOpacity={0.4} />
@@ -583,6 +586,7 @@ export default function Dashboard() {
                 <Area type="monotone" dataKey="risk"   stroke="#f59e0b" strokeWidth={3} fill="url(#gRisk)"   name="Risk %"   activeDot={{ r: 6, fill: '#f59e0b', stroke: '#fff' }} />
               </AreaChart>
             </ResponsiveContainer>
+            </div>
           ) : <div className="chart-empty">Waiting for live data…</div>}
         </motion.div>
 
@@ -597,8 +601,8 @@ export default function Dashboard() {
           </div>
           {statusData.length > 0 ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 24, position: 'relative' }}>
-              <div style={{ position: 'relative', width: 150, height: 150 }}>
-                <ResponsiveContainer width={150} height={150}>
+              <div style={{ position: 'relative', width: 150, height: 150, minWidth: 150, minHeight: 150 }}>
+                <ResponsiveContainer width={150} height={150} minWidth={0} minHeight={0}>
                   <PieChart>
                     <Pie data={statusData} cx="50%" cy="50%" innerRadius={52} outerRadius={68}
                       paddingAngle={4} cornerRadius={6} dataKey="value" strokeWidth={0}>
@@ -643,8 +647,9 @@ export default function Dashboard() {
               <div className="card-title">📊 Machine Health Scores</div>
               <div className="card-subtitle">Live health per unit (sorted)</div>
             </div>
-            <ResponsiveContainer width="100%" height={180}>
-              <BarChart data={healthHistory} margin={{ left: -20, right: 8, top: 12, bottom: 0 }}>
+            <div style={{ width: '100%', minHeight: 180 }}>
+              <ResponsiveContainer width="100%" height={180} minWidth={0} minHeight={0}>
+                <BarChart data={healthHistory} margin={{ left: -20, right: 8, top: 12, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.02)" vertical={false} />
                 <XAxis dataKey="name" tick={{ fontSize: 9, fill: '#4b5e78' }} axisLine={false} tickLine={false} />
                 <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: '#4b5e78' }} axisLine={false} tickLine={false} />
@@ -659,6 +664,7 @@ export default function Dashboard() {
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
+            </div>
           </motion.div>
         )}
 
