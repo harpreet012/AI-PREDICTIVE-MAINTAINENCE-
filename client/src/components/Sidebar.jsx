@@ -21,6 +21,7 @@ const NAV = [
 ];
 
 const ADMIN_NAV = [
+  { to: '/data-input', label: 'Data Input', icon: Upload },
   { to: '/import', label: 'Data Import', icon: Upload },
   { to: '/users',  label: 'Users',       icon: Users  },
 ];

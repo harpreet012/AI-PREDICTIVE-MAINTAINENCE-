@@ -223,4 +223,75 @@ router.post('/equipment', protect, upload.single('file'), async (req, res) => {
   }
 });
 
+// POST /api/upload - Single sensor data submission for real-time prediction
+router.post('/upload', protect, async (req, res) => {
+  try {
+    const { equipmentId, temperature, vibration, pressure, rpm, current, humidity, noiseLevel } = req.body;
+    
+    if (!equipmentId) {
+      return res.status(400).json({ success: false, error: 'Equipment ID is required' });
+    }
+
+    // Verify equipment exists
+    const equipment = await Equipment.findById(equipmentId);
+    if (!equipment) {
+      return res.status(404).json({ success: false, error: 'Equipment not found' });
+    }
+
+    // Create sensor reading
+    const reading = await SensorReading.create({
+      userId: req.user._id,
+      equipmentId,
+      timestamp: new Date(),
+      temperature: temperature || 0,
+      vibration: vibration || 0,
+      pressure: pressure || 0,
+      rpm: rpm || 0,
+      current: current || 0,
+      humidity: humidity || 50,
+      noiseLevel: noiseLevel || 60,
+    });
+
+    // Trigger ML prediction
+    const mlUrl = process.env.ML_SERVICE_URL || 'http://localhost:5001/predict';
+    try {
+      const mlResponse = await axios.post(mlUrl, {
+        equipmentId,
+        sensorData: {
+          temperature, vibration, pressure, rpm, current, humidity, noiseLevel
+        }
+      });
+      
+      // Update reading with ML results
+      if (mlResponse.data) {
+        reading.healthScore = mlResponse.data.healthScore || 100;
+        reading.anomalyScore = mlResponse.data.anomalyScore || 0;
+        reading.isAnomaly = mlResponse.data.isAnomaly || false;
+        reading.failureProbability = mlResponse.data.failureProbability || 0;
+        await reading.save();
+      }
+    } catch (mlError) {
+      console.warn('ML prediction failed, using default values:', mlError.message);
+    }
+
+    // Generate dataset ID for tracking
+    const datasetId = `DS-${Date.now()}`;
+
+    res.json({ 
+      success: true, 
+      message: 'Sensor data submitted successfully',
+      datasetId,
+      reading: {
+        id: reading._id,
+        healthScore: reading.healthScore,
+        anomalyScore: reading.anomalyScore,
+        isAnomaly: reading.isAnomaly
+      }
+    });
+  } catch (error) {
+    console.error('Upload error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 module.exports = router;

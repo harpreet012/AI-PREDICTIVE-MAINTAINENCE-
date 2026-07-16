@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { equipmentAPI } from '../services/api';
+import { API_URL } from '../config';
 import PageTransition from '../components/PageTransition';
 import toast from 'react-hot-toast';
 
@@ -54,11 +55,12 @@ export default function DataInputPage() {
 
     setLoading(true);
     try {
-      // Send data to backend for prediction
-      const response = await fetch('https://pm-backend-1-ym3w.onrender.com/api/upload', {
+      // Send data to backend for prediction using API_URL from config
+      const response = await fetch(`${API_URL}/upload`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('pm_token')}`,
         },
         body: JSON.stringify(data),
       });
@@ -73,7 +75,7 @@ export default function DataInputPage() {
         }
         navigate('/');
       } else {
-        toast.error('Failed to submit data');
+        toast.error(result.error || 'Failed to submit data');
       }
     } catch (error) {
       console.error('Submission error:', error);
