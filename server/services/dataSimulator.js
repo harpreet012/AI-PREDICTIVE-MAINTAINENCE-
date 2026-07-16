@@ -321,6 +321,6 @@ async function startSimulation(io) {
   // Run immediately then every 30 seconds
   await simulationLoop();
   return setInterval(simulationLoop, 30000);
+}
 
 module.exports = { startSimulation, generateReading, initEquipmentState };
-}
