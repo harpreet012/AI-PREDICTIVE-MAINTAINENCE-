@@ -23,17 +23,29 @@ const server = http.createServer(app);
 
 // ─── CORS — must be ABOVE all routes ─────────────────────────────────────────
 const corsOptions = {
-  origin: [
-    'https://pm-frontend-qxlo.onrender.com',
-    'https://pm-backend-1-ym3w.onrender.com',
-    process.env.FRONTEND_URL,
-    // Dev origins
-    'http://localhost:5173',
-    'http://localhost:3000',
-    'http://127.0.0.1:5173',
-  ].filter(Boolean),
+  origin: function (origin, callback) {
+    const allowedOrigins = [
+      'https://pm-frontend-qxlo.onrender.com',
+      'https://pm-backend-1-ym3w.onrender.com',
+      process.env.FRONTEND_URL,
+      // Dev origins
+      'http://localhost:5173',
+      'http://localhost:3000',
+      'http://127.0.0.1:5173',
+    ].filter(Boolean);
+    
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV === 'development') {
+      callback(null, true);
+    } else {
+      callback(new Error('CORS policy violation'));
+    }
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   credentials: true,
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
 };
 
 app.use(cors(corsOptions));
@@ -41,9 +53,27 @@ app.options('*', cors(corsOptions)); // handle preflight for all routes
 
 const io = new Server(server, {
   cors: {
-    origin: corsOptions.origin,
+    origin: function (origin, callback) {
+      const allowedOrigins = [
+        'https://pm-frontend-qxlo.onrender.com',
+        'https://pm-backend-1-ym3w.onrender.com',
+        process.env.FRONTEND_URL,
+        'http://localhost:5173',
+        'http://localhost:3000',
+        'http://127.0.0.1:5173',
+      ].filter(Boolean);
+      
+      if (!origin) return callback(null, true);
+      
+      if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV === 'development') {
+        callback(null, true);
+      } else {
+        callback(new Error('CORS policy violation'));
+      }
+    },
     methods: ['GET', 'POST'],
     credentials: true,
+    allowedHeaders: ['Content-Type', 'Authorization'],
   },
 });
 

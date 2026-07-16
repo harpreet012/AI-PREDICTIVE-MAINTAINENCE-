@@ -63,11 +63,11 @@ export default function SensorChart({
   const DataComp   = type === 'area' ? Area      : Line;
 
   return (
-    <div className="chart-container">
+    <div className="chart-container" style={{ width: '100%', minHeight: height }}>
       {title && (
         <div style={{ fontSize: 13, fontWeight: 600, color: '#94a3b8', marginBottom: 10 }}>{title}</div>
       )}
-      <ResponsiveContainer width="100%" height={height}>
+      <ResponsiveContainer width="100%" height={height} minWidth={0} minHeight={0}>
         <ChartComp data={formatted} margin={{ top: 12, right: 8, left: -20, bottom: 0 }}>
           <defs>
             <filter id="neonGlow" x="-20%" y="-20%" width="140%" height="140%">

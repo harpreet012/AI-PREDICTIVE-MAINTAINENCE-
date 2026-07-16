@@ -14,10 +14,17 @@ export function SocketProvider({ children }) {
 
   useEffect(() => {
     const socketUrl = BACKEND_URL || window.location.origin;
-    const s = io(socketUrl, { transports: ['websocket', 'polling'] });
+    const s = io(socketUrl, { 
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionAttempts: 5,
+      timeout: 10000,
+    });
 
     s.on('connect',    () => { setSocket(s); setConnected(true);  console.log('🔌 Socket connected'); });
     s.on('disconnect', () => {               setConnected(false); console.log('❌ Socket disconnected'); });
+    s.on('connect_error', (err) => { console.error('Socket connection error:', err); });
 
     s.on('sensorData', (data) => {
       setLiveReadings(prev => ({ ...prev, [data.equipmentId]: data }));
