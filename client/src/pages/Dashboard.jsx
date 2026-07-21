@@ -1,16 +1,15 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useSocket } from '../context/SocketContext';
-import { equipmentAPI, alertAPI, analyticsAPI } from '../services/api';
+import { equipmentAPI, alertAPI, analyticsAPI, datasetAPI } from '../services/api';
 import EquipmentCard from '../components/EquipmentCard';
 import GaugeMeter from '../components/GaugeMeter';
 import FactoryFloor from '../components/FactoryFloor';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
 import {
   Server, AlertTriangle, Activity, TrendingUp, TrendingDown,
   Minus, Shield, Clock, Zap, Cpu, ThermometerSun, Gauge, BarChart3,
-  ChevronRight, RefreshCw,
+  ChevronRight, RefreshCw, Building2, Filter,
 } from 'lucide-react';
 import {
   AreaChart, Area,
@@ -20,9 +19,7 @@ import {
   XAxis, YAxis, Tooltip, CartesianGrid,
   ResponsiveContainer, Legend, ReferenceLine,
 } from 'recharts';
-
-const SEVERITY_COLORS = { critical: '#ef4444', warning: '#f59e0b', info: '#3b82f6' };
-const STATUS_COLORS   = { healthy: '#10b981', warning: '#f59e0b', critical: '#ef4444', offline: '#64748b', maintenance: '#8b5cf6' };
+import { STATUS_COLORS, SEVERITY_COLORS } from '../constants';
 
 /* ── Animated Counter ── */
 function AnimatedNumber({ value, duration = 800 }) {
@@ -41,7 +38,7 @@ function AnimatedNumber({ value, duration = 800 }) {
     };
     raf.current = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf.current);
-  }, [value]); // eslint-disable-line
+  }, [value]);
   return <>{display}</>;
 }
 
@@ -128,7 +125,6 @@ function CriticalMachineCard({ machine, index }) {
       onClick={() => navigate(`/equipment/${machine._id}`)}
       style={{ cursor: 'pointer' }}
     >
-      {/* Pulsing alert dot */}
       <motion.div
         style={{ width: 10, height: 10, borderRadius: '50%', background: color, flexShrink: 0, boxShadow: `0 0 8px ${color}` }}
         animate={{ scale: [1, 1.4, 1], opacity: [1, 0.6, 1] }}
@@ -144,7 +140,6 @@ function CriticalMachineCard({ machine, index }) {
           <span>📍 {machine.location}</span>
           <span>🏭 {machine.type}</span>
         </div>
-        {/* Health bar */}
         <div style={{ marginTop: 8 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, fontSize: 11 }}>
             <span style={{ color: '#64748b' }}>Health Score</span>
@@ -159,7 +154,6 @@ function CriticalMachineCard({ machine, index }) {
             />
           </div>
         </div>
-        {/* Sensor pills row */}
         <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
           {live.temperature != null && (
             <span className={`risk-chip ${live.temperature > 85 ? 'high' : live.temperature > 75 ? 'medium' : 'low'}`}>
@@ -207,50 +201,27 @@ export default function Dashboard() {
   const [refreshing, setRefreshing]     = useState(false);
   const [oee, setOee] = useState({ availability: 0, performance: 0, quality: 0, overall: 0 });
   const [datasets, setDatasets] = useState([]);
-  const [apiData, setApiData] = useState({});
+  const [selectedDataset, setSelectedDataset] = useState('all');
   const { liveReadings, fleetSummary, liveAlerts } = useSocket();
   const navigate = useNavigate();
-
-  const datasetId = localStorage.getItem("datasetId") || "";
-
-  useEffect(() => {
-    axios
-      .get("https://pm-backend-1-ym3w.onrender.com/api/datasets")
-      .then(res => setDatasets(res?.data || []))
-      .catch(() => setDatasets([]));
-  }, []);
-
-  useEffect(() => {
-    const fetchApiData = async () => {
-      try {
-        const url = datasetId
-          ? `https://pm-backend-1-ym3w.onrender.com/api/dashboard/${datasetId}`
-          : `https://pm-backend-1-ym3w.onrender.com/api/dashboard`;
-        const res = await axios.get(url);
-        setApiData(res?.data || {});
-      } catch (err) {
-        console.log(err);
-        setApiData({});
-      }
-    };
-    fetchApiData();
-  }, [datasetId]);
 
   const fetchData = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     else setRefreshing(true);
     try {
-      const [eqRes, ovRes, alRes] = await Promise.all([
-        equipmentAPI.getAll(),
+      const [eqRes, ovRes, alRes, dsRes] = await Promise.all([
+        equipmentAPI.getAll(selectedDataset !== 'all' ? { datasetId: selectedDataset } : {}),
         analyticsAPI.getOverview(),
-        alertAPI.getAll({ limit: 8, acknowledged: false }),
+        alertAPI.getAll({ limit: 8, acknowledged: false, ...(selectedDataset !== 'all' && { datasetId: selectedDataset }) }),
+        datasetAPI.getAll({ limit: 100 }),
       ]);
       setEquipment(eqRes.data.data || []);
       setOverview(ovRes.data.data || {});
       setRecentAlerts(alRes.data.data || []);
+      setDatasets(dsRes.data.data || []);
     } catch (e) { console.error(e); }
     finally { setLoading(false); setRefreshing(false); }
-  }, []);
+  }, [selectedDataset]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -260,7 +231,10 @@ export default function Dashboard() {
     }
   }, [liveAlerts]);
 
-  const stats = fleetSummary || overview;
+  const stats =
+    fleetSummary && Object.keys(fleetSummary).length
+      ? fleetSummary
+      : overview;
 
   // Equipment with live status merged
   const equipmentWithLive = equipment.map(e => ({
@@ -270,7 +244,7 @@ export default function Dashboard() {
     failureProbability: liveReadings[e._id]?.failureProbability ?? e.failureProbability,
   }));
 
-  // CRITICAL MACHINES — combine DB status + live readings
+  // CRITICAL MACHINES
   const criticalMachines = equipmentWithLive.filter(e =>
     e.status === 'critical' || (e.healthScore != null && e.healthScore < 40)
   ).sort((a, b) => (a.healthScore || 0) - (b.healthScore || 0));
@@ -348,421 +322,449 @@ export default function Dashboard() {
     <PageTransition>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-      {/* SAFE dropdown UI */}
-      {datasets.length > 0 && (
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: -8 }}>
-          <select
-            style={{ background: '#121821', color: '#f0f6ff', border: '1px solid rgba(59,130,246,0.3)', padding: '6px 12px', borderRadius: 8, outline: 'none' }}
-            value={datasetId}
-            onChange={(e) => {
-              localStorage.setItem("datasetId", e.target.value);
-              window.location.reload();
-            }}
-          >
-            <option value="">All Datasets (Default)</option>
-            {datasets.map((id, i) => (
-              <option key={i} value={id}>
-                Dataset {i + 1}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
-
-      {/* ── KPI Stats & OEE ──────────────────────── */}
-      <div className="grid-2" style={{ marginBottom: 0 }}>
-        <div className="stat-cards-grid" style={{ marginBottom: 0, paddingBottom: 0, gap: 10, gridTemplateColumns: 'repeat(2, 1fr)' }}>
-          <StatCard index={0} label="Total Equipment"   value={stats.totalEquipment || equipment.length} icon={<Server size={18} />} color="#00D2FF" trend={0} />
-          <StatCard index={1} label="Fleet Health"      value={avgHealth} unit="%" icon={<Activity size={18} />} color="#00FF41" trend={avgHealth > 75 ? 1 : -1} />
-          <StatCard index={2} label="Critical Machines" value={criticalMachines.length || stats.critical || 0} icon={<Shield size={18} />} color="#FF003C" pulse={criticalMachines.length > 0} />
-          <StatCard index={3} label="Alerts (24h)"      value={stats.recentAlerts || recentAlerts.length} icon={<Zap size={18} />} color="#8b5cf6" />
-        </div>
-
-        {/* Global OEE Module */}
-        <motion.div className="card"
-          style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', border: '1px solid var(--border-bright)', background: 'linear-gradient(135deg, rgba(0,210,255,0.05) 0%, var(--bg-card) 60%)' }}
-          initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.1 }}
-        >
-          <div className="card-header" style={{ marginBottom: 8 }}>
-            <div>
-              <div className="card-title" style={{ color: 'var(--accent-cyan)' }}>Overall Equipment Effectiveness</div>
-              <div className="card-subtitle">Live real-time production KPI</div>
-            </div>
-            <div style={{ fontSize: 24, fontWeight: 900, color: '#e6edf3', letterSpacing: -1 }}>
-              <AnimatedNumber value={oee.overall} />%
-            </div>
+        {/* ── Page Header with Dataset Filter ──────────────────────── */}
+        <div className="page-header">
+          <div className="page-header-left">
+            <h2>📊 Dashboard</h2>
+            <p>Real-time equipment monitoring and predictive maintenance</p>
           </div>
-          
-          <div style={{ display: 'flex', gap: 16, marginTop: 'auto' }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 4, color: 'var(--text-secondary)' }}>
-                <span>Availability</span><span style={{ color: '#00D2FF', fontWeight: 700 }}>{oee.availability}%</span>
-              </div>
-              <div className="metric-bar-wrap"><div className="metric-bar-fill" style={{ width: `${oee.availability}%`, background: '#00D2FF' }} /></div>
-            </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 4, color: 'var(--text-secondary)' }}>
-                <span>Performance</span><span style={{ color: '#FACC15', fontWeight: 700 }}>{oee.performance}%</span>
-              </div>
-              <div className="metric-bar-wrap"><div className="metric-bar-fill" style={{ width: `${oee.performance}%`, background: '#FACC15' }} /></div>
-            </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 4, color: 'var(--text-secondary)' }}>
-                <span>Quality</span><span style={{ color: '#00FF41', fontWeight: 700 }}>{oee.quality}%</span>
-              </div>
-              <div className="metric-bar-wrap"><div className="metric-bar-fill" style={{ width: `${oee.quality}%`, background: '#00FF41' }} /></div>
-            </div>
-          </div>
-        </motion.div>
-      </div>
-
-      {/* ── CRITICAL MACHINES ALERT SECTION ──────── */}
-      <AnimatePresence>
-        {criticalMachines.length > 0 && (
-          <motion.div
-            className="card"
-            style={{
-              border: '1px solid rgba(239,68,68,0.4)',
-              background: 'linear-gradient(135deg, rgba(239,68,68,0.06) 0%, rgba(14,30,51,1) 60%)',
-              boxShadow: '0 0 40px rgba(239,68,68,0.12)',
-              marginBottom: 0
-            }}
-            initial={{ opacity: 0, y: -16 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -16 }}
-            transition={{ duration: 0.4 }}
-          >
-            <div className="card-header" style={{ marginBottom: 16 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <motion.div
-                  style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(239,68,68,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}
-                  animate={{ scale: [1, 1.08, 1] }}
-                  transition={{ duration: 1.5, repeat: Infinity }}
-                >🚨</motion.div>
-                <div>
-                  <div className="card-title" style={{ color: '#ef4444' }}>
-                    Critical Machines — Immediate Action Required
-                  </div>
-                  <div className="card-subtitle" style={{ color: '#f87171' }}>
-                    {criticalMachines.length} machine{criticalMachines.length > 1 ? 's' : ''} in critical state
-                  </div>
-                </div>
-              </div>
-              <motion.button
-                className="btn btn-danger btn-sm"
-                style={{ fontSize: 11 }}
-                onClick={() => navigate('/alerts')}
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-              >
-                View All Alerts →
-              </motion.button>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {criticalMachines.slice(0, 5).map((machine, i) => (
-                <CriticalMachineCard key={machine._id} machine={machine} index={i} />
-              ))}
-              {criticalMachines.length > 5 && (
-                <motion.button
-                  className="btn btn-secondary btn-sm"
-                  style={{ alignSelf: 'flex-start', marginTop: 4 }}
-                  onClick={() => navigate('/equipment')}
-                  whileHover={{ scale: 1.03 }}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            {datasets.length > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Filter size={16} style={{ color: '#4b5e78' }} />
+                <select
+                  className="form-select"
+                  style={{ width: 'auto', minWidth: 200 }}
+                  value={selectedDataset}
+                  onChange={(e) => setSelectedDataset(e.target.value)}
                 >
-                  +{criticalMachines.length - 5} more critical machines →
-                </motion.button>
-              )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+                  <option value="all">All Datasets</option>
+                  {datasets.map(ds => (
+                    <option key={ds._id} value={ds._id}>
+                      {ds.factoryName} ({ds.location})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <motion.button
+              className="btn btn-secondary"
+              onClick={() => fetchData(true)}
+              disabled={refreshing}
+              whileHover={{ scale: 1.04 }}
+              whileTap={{ scale: 0.96 }}
+              style={{ gap: 8 }}
+            >
+              <RefreshCw size={14} className={refreshing ? 'spin' : ''} />
+              Refresh
+            </motion.button>
+          </div>
+        </div>
 
-      {/* ── Warning Machines (compact) ────────────── */}
-      <AnimatePresence>
-        {warningMachines.length > 0 && criticalMachines.length === 0 && (
-          <motion.div
-            className="card"
-            style={{ border: '1px solid rgba(245,158,11,0.3)', background: 'linear-gradient(135deg, rgba(245,158,11,0.05) 0%, rgba(14,30,51,1) 60%)', marginBottom: 0 }}
-            initial={{ opacity: 0, y: -12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.35 }}
+        {/* ── KPI Stats & OEE ──────────────────────── */}
+        <div className="grid-2" style={{ marginBottom: 0 }}>
+          <div className="stat-cards-grid" style={{ marginBottom: 0, paddingBottom: 0, gap: 10, gridTemplateColumns: 'repeat(2, 1fr)' }}>
+            <StatCard index={0} label="Total Equipment"   value={stats.totalEquipment || equipment.length} icon={<Server size={18} />} color="#00D2FF" trend={0} />
+            <StatCard index={1} label="Fleet Health"      value={avgHealth} unit="%" icon={<Activity size={18} />} color="#00FF41" trend={avgHealth > 75 ? 1 : -1} />
+            <StatCard index={2} label="Critical Machines" value={criticalMachines.length || stats.critical || 0} icon={<Shield size={18} />} color="#FF003C" pulse={criticalMachines.length > 0} />
+            <StatCard index={3} label="Alerts (24h)"      value={stats.recentAlerts || recentAlerts.length} icon={<Zap size={18} />} color="#8b5cf6" />
+          </div>
+
+          {/* Global OEE Module */}
+          <motion.div className="card"
+            style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', border: '1px solid var(--border-bright)', background: 'linear-gradient(135deg, rgba(0,210,255,0.05) 0%, var(--bg-card) 60%)' }}
+            initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.1 }}
           >
-            <div className="card-header">
+            <div className="card-header" style={{ marginBottom: 8 }}>
               <div>
-                <div className="card-title" style={{ color: '#f59e0b' }}>⚠️ Warning — {warningMachines.length} Machine(s) Need Attention</div>
-                <div className="card-subtitle">Schedule maintenance within 48 hours</div>
+                <div className="card-title" style={{ color: 'var(--accent-cyan)' }}>Overall Equipment Effectiveness</div>
+                <div className="card-subtitle">Live real-time production KPI</div>
               </div>
-              <button className="btn btn-sm" style={{ background: 'rgba(245,158,11,0.1)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)' }} onClick={() => navigate('/maintenance')}>
-                Schedule →
-              </button>
+              <div style={{ fontSize: 24, fontWeight: 900, color: '#e6edf3', letterSpacing: -1 }}>
+                <AnimatedNumber value={oee.overall} />%
+              </div>
             </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              {warningMachines.slice(0, 8).map(m => (
-                <motion.span
-                  key={m._id}
-                  className="status-badge warning"
-                  style={{ cursor: 'pointer' }}
-                  onClick={() => navigate(`/equipment/${m._id}`)}
-                  whileHover={{ scale: 1.05 }}
-                >
-                  ⚠️ {m.name} ({m.healthScore}%)
-                </motion.span>
-              ))}
+            
+            <div style={{ display: 'flex', gap: 16, marginTop: 'auto' }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 4, color: 'var(--text-secondary)' }}>
+                  <span>Availability</span><span style={{ color: '#00D2FF', fontWeight: 700 }}>{oee.availability}%</span>
+                </div>
+                <div className="metric-bar-wrap"><div className="metric-bar-fill" style={{ width: `${oee.availability}%`, background: '#00D2FF' }} /></div>
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 4, color: 'var(--text-secondary)' }}>
+                  <span>Performance</span><span style={{ color: '#FACC15', fontWeight: 700 }}>{oee.performance}%</span>
+                </div>
+                <div className="metric-bar-wrap"><div className="metric-bar-fill" style={{ width: `${oee.performance}%`, background: '#FACC15' }} /></div>
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 4, color: 'var(--text-secondary)' }}>
+                  <span>Quality</span><span style={{ color: '#00FF41', fontWeight: 700 }}>{oee.quality}%</span>
+                </div>
+                <div className="metric-bar-wrap"><div className="metric-bar-fill" style={{ width: `${oee.quality}%`, background: '#00FF41' }} /></div>
+              </div>
             </div>
           </motion.div>
-        )}
-      </AnimatePresence>
+        </div>
 
-      {/* ── Fleet Gauges ──────────────────────────── */}
-      {healthHistory.length > 0 && (
-        <motion.div className="card"
-          initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}>
-          <div className="card-header">
-            <div>
-              <div className="card-title">⚡ Live Fleet Health Gauges</div>
-              <div className="card-subtitle">Real-time health score per machine</div>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <motion.button
-                className="btn btn-secondary btn-sm btn-icon"
-                onClick={() => fetchData(true)}
-                animate={refreshing ? { rotate: 360 } : {}}
-                transition={{ duration: 0.8, repeat: refreshing ? Infinity : 0, ease: 'linear' }}
-              >
-                <RefreshCw size={13} />
-              </motion.button>
-              <div className="live-badge"><span className="live-dot" />LIVE</div>
-            </div>
-          </div>
-          <div className="fleet-gauges-row">
-            {healthHistory.slice(0, 10).map((r, i) => (
-              <motion.div key={i} className="fleet-gauge-item"
-                initial={{ opacity: 0, scale: 0.7 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: 0.05 + i * 0.06, type: 'spring', stiffness: 200 }}>
-                <GaugeMeter value={r.health} size={64} label={r.name} />
-              </motion.div>
-            ))}
-          </div>
-        </motion.div>
-      )}
-
-      {/* ── Charts Row ─────────────────────────────── */}
-      <div className="grid-2">
-
-        {/* Area chart — health & risk trend */}
-        <motion.div className="card"
-          initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.35 }}>
-          <div className="card-header">
-            <div>
-              <div className="card-title">📈 Fleet Health Trend</div>
-              <div className="card-subtitle">Health & risk across all machines</div>
-            </div>
-            <BarChart3 size={14} style={{ color: '#4b5e78' }} />
-          </div>
-          {trendData.length > 0 ? (
-            <div style={{ width: '100%', minHeight: 180 }}>
-              <ResponsiveContainer width="100%" height={180} minWidth={0} minHeight={0}>
-                <AreaChart data={trendData} margin={{ left: -20, right: 8, top: 12, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="gHealth" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%"  stopColor="#10b981" stopOpacity={0.4} />
-                    <stop offset="95%" stopColor="#10b981" stopOpacity={0.0} />
-                  </linearGradient>
-                  <linearGradient id="gRisk" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%"  stopColor="#f59e0b" stopOpacity={0.4} />
-                    <stop offset="95%" stopColor="#f59e0b" stopOpacity={0.0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.02)" vertical={false} />
-                <XAxis dataKey="name" tick={{ fontSize: 9, fill: '#4b5e78' }} axisLine={false} tickLine={false} />
-                <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: '#4b5e78' }} axisLine={false} tickLine={false} />
-                <Tooltip content={<CustomTooltip />} />
-                <ReferenceLine y={75} stroke="rgba(16,185,129,0.15)" strokeDasharray="4 4" />
-                <ReferenceLine y={50} stroke="rgba(239,68,68,0.15)"   strokeDasharray="4 4" />
-                <Legend wrapperStyle={{ fontSize: 11, paddingTop: 10 }} iconType="circle" />
-                <Area type="monotone" dataKey="health" stroke="#10b981" strokeWidth={3} fill="url(#gHealth)" name="Health %" activeDot={{ r: 6, fill: '#10b981', stroke: '#fff' }} />
-                <Area type="monotone" dataKey="risk"   stroke="#f59e0b" strokeWidth={3} fill="url(#gRisk)"   name="Risk %"   activeDot={{ r: 6, fill: '#f59e0b', stroke: '#fff' }} />
-              </AreaChart>
-            </ResponsiveContainer>
-            </div>
-          ) : <div className="chart-empty">Waiting for live data…</div>}
-        </motion.div>
-
-        {/* Pie + Legend — Status breakdown */}
-        <motion.div className="card"
-          initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.35 }}>
-          <div className="card-header">
-            <div>
-              <div className="card-title">🍩 Fleet Status Distribution</div>
-              <div className="card-subtitle">Equipment breakdown by status</div>
-            </div>
-          </div>
-          {statusData.length > 0 ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 24, position: 'relative' }}>
-              <div style={{ position: 'relative', width: 150, height: 150, minWidth: 150, minHeight: 150 }}>
-                <ResponsiveContainer width={150} height={150} minWidth={0} minHeight={0}>
-                  <PieChart>
-                    <Pie data={statusData} cx="50%" cy="50%" innerRadius={52} outerRadius={68}
-                      paddingAngle={4} cornerRadius={6} dataKey="value" strokeWidth={0}>
-                      {statusData.map((d, i) => (
-                        <Cell key={i} fill={d.color} style={{ filter: `drop-shadow(0 0 6px ${d.color}77)` }} />
-                      ))}
-                    </Pie>
-                    <Tooltip content={<CustomTooltip />} />
-                  </PieChart>
-                </ResponsiveContainer>
-                {/* Custom Donut Center */}
-                <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
-                  <div style={{ fontSize: 24, fontWeight: 900, color: '#e6edf3', lineHeight: 1 }}>{equipment.length || 0}</div>
-                  <div style={{ fontSize: 9, color: '#64748b', textTransform: 'uppercase', letterSpacing: 1, marginTop: 4 }}>Total</div>
-                </div>
-              </div>
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {statusData.map(({ name, value, color }) => (
-                  <div key={name} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ width: 10, height: 10, borderRadius: '50%', background: color, flexShrink: 0, boxShadow: `0 0 8px ${color}` }} />
-                    <span style={{ fontSize: 12, color: '#94a3b8', textTransform: 'capitalize', flex: 1 }}>{name}</span>
-                    <span style={{ fontSize: 14, fontWeight: 800, color }}>{value}</span>
-                    <span style={{ fontSize: 10, color: '#4b5e78' }}>
-                      {equipment.length > 0 ? Math.round((value / equipment.length) * 100) : 0}%
-                    </span>
+        {/* ── CRITICAL MACHINES ALERT SECTION ──────── */}
+        <AnimatePresence>
+          {criticalMachines.length > 0 && (
+            <motion.div
+              className="card"
+              style={{
+                border: '1px solid rgba(239,68,68,0.4)',
+                background: 'linear-gradient(135deg, rgba(239,68,68,0.06) 0%, rgba(14,30,51,1) 60%)',
+                boxShadow: '0 0 40px rgba(239,68,68,0.12)',
+                marginBottom: 0
+              }}
+              initial={{ opacity: 0, y: -16 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -16 }}
+              transition={{ duration: 0.4 }}
+            >
+              <div className="card-header" style={{ marginBottom: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <motion.div
+                    style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(239,68,68,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}
+                    animate={{ scale: [1, 1.08, 1] }}
+                    transition={{ duration: 1.5, repeat: Infinity }}
+                  >🚨</motion.div>
+                  <div>
+                    <div className="card-title" style={{ color: '#ef4444' }}>
+                      Critical Machines — Immediate Action Required
+                    </div>
+                    <div className="card-subtitle" style={{ color: '#f87171' }}>
+                      {criticalMachines.length} machine{criticalMachines.length > 1 ? 's' : ''} in critical state
+                    </div>
                   </div>
+                </div>
+                <motion.button
+                  className="btn btn-danger btn-sm"
+                  style={{ fontSize: 11 }}
+                  onClick={() => navigate('/alerts')}
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  View All Alerts →
+                </motion.button>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {criticalMachines.slice(0, 5).map((machine, i) => (
+                  <CriticalMachineCard key={machine._id} machine={machine} index={i} />
+                ))}
+                {criticalMachines.length > 5 && (
+                  <motion.button
+                    className="btn btn-secondary btn-sm"
+                    style={{ alignSelf: 'flex-start', marginTop: 4 }}
+                    onClick={() => navigate('/equipment')}
+                    whileHover={{ scale: 1.03 }}
+                  >
+                    +{criticalMachines.length - 5} more critical machines →
+                  </motion.button>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* ── Warning Machines (compact) ────────────── */}
+        <AnimatePresence>
+          {warningMachines.length > 0 && criticalMachines.length === 0 && (
+            <motion.div
+              className="card"
+              style={{ border: '1px solid rgba(245,158,11,0.3)', background: 'linear-gradient(135deg, rgba(245,158,11,0.05) 0%, rgba(14,30,51,1) 60%)', marginBottom: 0 }}
+              initial={{ opacity: 0, y: -12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.35 }}
+            >
+              <div className="card-header">
+                <div>
+                  <div className="card-title" style={{ color: '#f59e0b' }}>⚠️ Warning — {warningMachines.length} Machine(s) Need Attention</div>
+                  <div className="card-subtitle">Schedule maintenance within 48 hours</div>
+                </div>
+                <button className="btn btn-sm" style={{ background: 'rgba(245,158,11,0.1)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)' }} onClick={() => navigate('/maintenance')}>
+                  Schedule →
+                </button>
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {warningMachines.slice(0, 8).map(m => (
+                  <motion.span
+                    key={m._id}
+                    className="status-badge warning"
+                    style={{ cursor: 'pointer' }}
+                    onClick={() => navigate(`/equipment/${m._id}`)}
+                    whileHover={{ scale: 1.05 }}
+                  >
+                    ⚠️ {m.name} ({m.healthScore}%)
+                  </motion.span>
                 ))}
               </div>
-            </div>
-          ) : <div className="chart-empty">No equipment data</div>}
-        </motion.div>
-      </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-      {/* ── Second Charts Row ──────────────────────── */}
-      <div className="grid-2">
-
-        {/* Health bar chart per machine */}
+        {/* ── Fleet Gauges ──────────────────────────── */}
         {healthHistory.length > 0 && (
           <motion.div className="card"
-            initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.45 }}>
+            initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}>
             <div className="card-header">
-              <div className="card-title">📊 Machine Health Scores</div>
-              <div className="card-subtitle">Live health per unit (sorted)</div>
+              <div>
+                <div className="card-title">⚡ Live Fleet Health Gauges</div>
+                <div className="card-subtitle">Real-time health score per machine</div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <motion.button
+                  className="btn btn-secondary btn-sm btn-icon"
+                  onClick={() => fetchData(true)}
+                  animate={refreshing ? { rotate: 360 } : {}}
+                  transition={{ duration: 0.8, repeat: refreshing ? Infinity : 0, ease: 'linear' }}
+                >
+                  <RefreshCw size={13} />
+                </motion.button>
+                <div className="live-badge"><span className="live-dot" />LIVE</div>
+              </div>
             </div>
-            <div style={{ width: '100%', minHeight: 180 }}>
-              <ResponsiveContainer width="100%" height={180} minWidth={0} minHeight={0}>
-                <BarChart data={healthHistory} margin={{ left: -20, right: 8, top: 12, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.02)" vertical={false} />
-                <XAxis dataKey="name" tick={{ fontSize: 9, fill: '#4b5e78' }} axisLine={false} tickLine={false} />
-                <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: '#4b5e78' }} axisLine={false} tickLine={false} />
-                <Tooltip content={<CustomTooltip />} />
-                <ReferenceLine y={75} stroke="rgba(16,185,129,0.15)" strokeDasharray="3 2" />
-                <ReferenceLine y={50} stroke="rgba(239,68,68,0.15)"  strokeDasharray="3 2" />
-                <Bar dataKey="health" radius={[10, 10, 10, 10]} barSize={10} name="Health %">
-                  {healthHistory.map((entry, i) => {
-                    const color = entry.health >= 80 ? '#10b981' : entry.health >= 60 ? '#f59e0b' : '#ef4444';
-                    return <Cell key={i} fill={color} style={{ filter: `drop-shadow(0 0 6px ${color}99)` }} />;
-                  })}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+            <div className="fleet-gauges-row">
+              {healthHistory.slice(0, 10).map((r, i) => (
+                <motion.div key={i} className="fleet-gauge-item"
+                  initial={{ opacity: 0, scale: 0.7 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ delay: 0.05 + i * 0.06, type: 'spring', stiffness: 200 }}>
+                  <GaugeMeter value={r.health} size={64} label={r.name} />
+                </motion.div>
+              ))}
             </div>
           </motion.div>
         )}
 
-        {/* Risk distribution */}
-        <motion.div className="card"
-          initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}>
-          <div className="card-header">
-            <div className="card-title">⚡ Failure Risk Distribution</div>
-            <div className="card-subtitle">Equipment grouped by risk level</div>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14, paddingTop: 8 }}>
-            {riskDist.map((r, i) => (
-              <motion.div key={r.label}
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.5 + i * 0.1 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: 12 }}>
-                  <span style={{ color: '#94a3b8' }}>{r.label}</span>
-                  <span style={{ color: r.color, fontWeight: 700 }}>{r.value} machine{r.value !== 1 ? 's' : ''}</span>
-                </div>
-                <div style={{ height: 12, background: 'rgba(255,255,255,0.03)', borderRadius: 12, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.05)' }}>
-                  <motion.div
-                    style={{ height: '100%', background: `linear-gradient(90deg, ${r.color}, ${r.color}bb)`, borderRadius: 12, boxShadow: `inset 0 2px 4px rgba(255,255,255,0.2)` }}
-                    initial={{ width: 0 }}
-                    animate={{ width: equipment.length > 0 ? `${(r.value / equipment.length) * 100}%` : '0%' }}
-                    transition={{ duration: 1.2, delay: 0.6 + i * 0.1, ease: [0.16, 1, 0.3, 1] }}
-                  />
-                </div>
-              </motion.div>
-            ))}
-            {/* Summary score */}
-            <div style={{ marginTop: 8, padding: '12px 16px', background: 'rgba(59,130,246,0.06)', borderRadius: 10, border: '1px solid rgba(59,130,246,0.15)' }}>
-              <div style={{ fontSize: 11, color: '#64748b', marginBottom: 4 }}>Overall Fleet Risk Score</div>
-              <div style={{ fontSize: 26, fontWeight: 800, color: avgHealth > 75 ? '#10b981' : avgHealth > 55 ? '#f59e0b' : '#ef4444' }}>
-                {100 - avgHealth}%
-                <span style={{ fontSize: 12, fontWeight: 400, color: '#64748b', marginLeft: 6 }}>avg failure probability</span>
+        {/* ── Charts Row ─────────────────────────────── */}
+        <div className="grid-2">
+
+          {/* Area chart — health & risk trend */}
+          <motion.div className="card"
+            initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.35 }}>
+            <div className="card-header">
+              <div>
+                <div className="card-title">📈 Fleet Health Trend</div>
+                <div className="card-subtitle">Health & risk across all machines</div>
+              </div>
+              <BarChart3 size={14} style={{ color: '#4b5e78' }} />
+            </div>
+            {trendData.length > 0 ? (
+              <div style={{ width: '100%', minHeight: 180 }}>
+                <ResponsiveContainer width="100%" height={180} minWidth={0} minHeight={0}>
+                  <AreaChart data={trendData} margin={{ left: -20, right: 8, top: 12, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="gHealth" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%"  stopColor="#10b981" stopOpacity={0.4} />
+                        <stop offset="95%" stopColor="#10b981" stopOpacity={0.0} />
+                      </linearGradient>
+                      <linearGradient id="gRisk" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%"  stopColor="#f59e0b" stopOpacity={0.4} />
+                        <stop offset="95%" stopColor="#f59e0b" stopOpacity={0.0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.02)" vertical={false} />
+                    <XAxis dataKey="name" tick={{ fontSize: 9, fill: '#4b5e78' }} axisLine={false} tickLine={false} />
+                    <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: '#4b5e78' }} axisLine={false} tickLine={false} />
+                    <Tooltip content={<CustomTooltip />} />
+                    <ReferenceLine y={75} stroke="rgba(16,185,129,0.15)" strokeDasharray="4 4" />
+                    <ReferenceLine y={50} stroke="rgba(239,68,68,0.15)"   strokeDasharray="4 4" />
+                    <Legend wrapperStyle={{ fontSize: 11, paddingTop: 10 }} iconType="circle" />
+                    <Area type="monotone" dataKey="health" stroke="#10b981" strokeWidth={3} fill="url(#gHealth)" name="Health %" activeDot={{ r: 6, fill: '#10b981', stroke: '#fff' }} />
+                    <Area type="monotone" dataKey="risk"   stroke="#f59e0b" strokeWidth={3} fill="url(#gRisk)"   name="Risk %"   activeDot={{ r: 6, fill: '#f59e0b', stroke: '#fff' }} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            ) : <div className="chart-empty">Waiting for live data…</div>}
+          </motion.div>
+
+          {/* Pie + Legend — Status breakdown */}
+          <motion.div className="card"
+            initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.35 }}>
+            <div className="card-header">
+              <div>
+                <div className="card-title">🍩 Fleet Status Distribution</div>
+                <div className="card-subtitle">Equipment breakdown by status</div>
               </div>
             </div>
-          </div>
-        </motion.div>
-      </div>
+            {statusData.length > 0 ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 24, position: 'relative' }}>
+                <div style={{ position: 'relative', width: 150, height: 150, minWidth: 150, minHeight: 150 }}>
+                  <ResponsiveContainer width={150} height={150} minWidth={0} minHeight={0}>
+                    <PieChart>
+                      <Pie data={statusData} cx="50%" cy="50%" innerRadius={52} outerRadius={68}
+                        paddingAngle={4} cornerRadius={6} dataKey="value" strokeWidth={0}>
+                        {statusData.map((d, i) => (
+                          <Cell key={i} fill={d.color} style={{ filter: `drop-shadow(0 0 6px ${d.color}77)` }} />
+                        ))}
+                      </Pie>
+                      <Tooltip content={<CustomTooltip />} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  {/* Custom Donut Center */}
+                  <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+                    <div
+                      style={{
+                        fontSize: 24,
+                        fontWeight: 900,
+                        color: '#e6edf3',
+                        lineHeight: 1,
+                      }}
+                    >
+                      {stats.totalEquipment || equipment.length || 0}
+                    </div>
+                    <div style={{ fontSize: 9, color: '#64748b', textTransform: 'uppercase', letterSpacing: 1, marginTop: 4 }}>Total</div>
+                  </div>
+                </div>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {statusData.map(({ name, value, color }) => (
+                    <div key={name} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ width: 10, height: 10, borderRadius: '50%', background: color, flexShrink: 0, boxShadow: `0 0 8px ${color}` }} />
+                      <span style={{ fontSize: 12, color: '#94a3b8', textTransform: 'capitalize', flex: 1 }}>{name}</span>
+                      <span style={{ fontSize: 14, fontWeight: 800, color }}>{value}</span>
+                      <span style={{ fontSize: 10, color: '#4b5e78' }}>
+                        {(stats.totalEquipment || equipment.length) > 0 
+                          ? Math.round((value / (stats.totalEquipment || equipment.length)) * 100) 
+                          : 0}%
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : <div className="chart-empty">No equipment data</div>}
+          </motion.div>
+        </div>
 
-      {/* ── Recent Alerts ──────────────────────────── */}
-      {recentAlerts.length > 0 && (
-        <motion.div className="card"
-          initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.55 }}>
-          <div className="card-header">
-            <div>
-              <div className="card-title">🚨 Recent Alerts</div>
-              <div className="card-subtitle">Latest anomalies & threshold violations</div>
+        {/* ── Second Charts Row ──────────────────────── */}
+        <div className="grid-2">
+
+          {/* Health bar chart per machine */}
+          {healthHistory.length > 0 && (
+            <motion.div className="card"
+              initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.45 }}>
+              <div className="card-header">
+                <div className="card-title">📊 Machine Health Scores</div>
+                <div className="card-subtitle">Live health per unit (sorted)</div>
+              </div>
+              <div style={{ width: '100%', minHeight: 180 }}>
+                <ResponsiveContainer width="100%" height={180} minWidth={0} minHeight={0}>
+                  <BarChart data={healthHistory} margin={{ left: -20, right: 8, top: 12, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.02)" vertical={false} />
+                    <XAxis dataKey="name" tick={{ fontSize: 9, fill: '#4b5e78' }} axisLine={false} tickLine={false} />
+                    <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: '#4b5e78' }} axisLine={false} tickLine={false} />
+                    <Tooltip content={<CustomTooltip />} />
+                    <ReferenceLine y={75} stroke="rgba(16,185,129,0.15)" strokeDasharray="3 2" />
+                    <ReferenceLine y={50} stroke="rgba(239,68,68,0.15)"  strokeDasharray="3 2" />
+                    <Bar dataKey="health" radius={[10, 10, 10, 10]} barSize={10} name="Health %">
+                      {healthHistory.map((entry, i) => {
+                        const color = entry.health >= 80 ? '#10b981' : entry.health >= 60 ? '#f59e0b' : '#ef4444';
+                        return <Cell key={i} fill={color} style={{ filter: `drop-shadow(0 0 6px ${color}99)` }} />;
+                      })}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </motion.div>
+          )}
+
+          {/* Risk distribution */}
+          <motion.div className="card"
+            initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}>
+            <div className="card-header">
+              <div className="card-title">⚡ Failure Risk Distribution</div>
+              <div className="card-subtitle">Equipment grouped by risk level</div>
             </div>
-            <button className="btn btn-secondary btn-sm" onClick={() => navigate('/alerts')}>View All →</button>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {recentAlerts.map((alert, i) => (
-              <motion.div key={alert._id || i} className={`alert-card ${alert.severity}`}
-                initial={{ opacity: 0, x: -16 }} animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: i * 0.05 }}
-                whileHover={{ x: 4, transition: { duration: 0.15 } }}>
-                <div className={`alert-icon ${alert.severity}`}>
-                  {alert.severity === 'critical' ? '🚨' : alert.severity === 'warning' ? '⚠️' : 'ℹ️'}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14, paddingTop: 8 }}>
+              {riskDist.map((r, i) => (
+                <motion.div key={r.label}
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.5 + i * 0.1 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: 12 }}>
+                    <span style={{ color: '#94a3b8' }}>{r.label}</span>
+                    <span style={{ color: r.color, fontWeight: 700 }}>{r.value} machine{r.value !== 1 ? 's' : ''}</span>
+                  </div>
+                  <div style={{ height: 12, background: 'rgba(255,255,255,0.03)', borderRadius: 12, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.05)' }}>
+                    <motion.div
+                      style={{ height: '100%', background: `linear-gradient(90deg, ${r.color}, ${r.color}bb)`, borderRadius: 12, boxShadow: `inset 0 2px 4px rgba(255,255,255,0.2)` }}
+                      initial={{ width: 0 }}
+                      animate={{ width: equipment.length > 0 ? `${(r.value / equipment.length) * 100}%` : '0%' }}
+                      transition={{ duration: 1.2, delay: 0.6 + i * 0.1, ease: [0.16, 1, 0.3, 1] }}
+                    />
+                  </div>
+                </motion.div>
+              ))}
+              <div style={{ marginTop: 8, padding: '12px 16px', background: 'rgba(59,130,246,0.06)', borderRadius: 10, border: '1px solid rgba(59,130,246,0.15)' }}>
+                <div style={{ fontSize: 11, color: '#64748b', marginBottom: 4 }}>Overall Fleet Risk Score</div>
+                <div style={{ fontSize: 26, fontWeight: 800, color: avgHealth > 75 ? '#10b981' : avgHealth > 55 ? '#f59e0b' : '#ef4444' }}>
+                  {100 - avgHealth}%
+                  <span style={{ fontSize: 12, fontWeight: 400, color: '#64748b', marginLeft: 6 }}>avg failure probability</span>
                 </div>
-                <div className="alert-body">
-                  <div className="alert-message">{alert.message}</div>
-                  <div className="alert-equip">{alert.equipmentId?.name} · {alert.equipmentId?.location}</div>
-                  <div className="alert-meta">{new Date(alert.createdAt).toLocaleString()} · {alert.type}</div>
-                </div>
-                <span className={`status-badge ${alert.severity}`}>{alert.severity}</span>
-              </motion.div>
-            ))}
+              </div>
+            </div>
+          </motion.div>
+        </div>
+
+        {/* ── Recent Alerts ──────────────────────────── */}
+        {recentAlerts.length > 0 && (
+          <motion.div className="card"
+            initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.55 }}>
+            <div className="card-header">
+              <div>
+                <div className="card-title">🚨 Recent Alerts</div>
+                <div className="card-subtitle">Latest anomalies & threshold violations</div>
+              </div>
+              <button className="btn btn-secondary btn-sm" onClick={() => navigate('/alerts')}>View All →</button>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {recentAlerts.map((alert, i) => (
+                <motion.div key={alert._id || i} className={`alert-card ${alert.severity}`}
+                  initial={{ opacity: 0, x: -16 }} animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: i * 0.05 }}
+                  whileHover={{ x: 4, transition: { duration: 0.15 } }}>
+                  <div className={`alert-icon ${alert.severity}`}>
+                    {alert.severity === 'critical' ? '🚨' : alert.severity === 'warning' ? '⚠️' : 'ℹ️'}
+                  </div>
+                  <div className="alert-body">
+                    <div className="alert-message">{alert.message}</div>
+                    <div className="alert-equip">{alert.equipmentId?.name} · {alert.equipmentId?.location}</div>
+                    <div className="alert-meta">{new Date(alert.createdAt).toLocaleString()} · {alert.type}</div>
+                  </div>
+                  <span className={`status-badge ${alert.severity}`}>{alert.severity}</span>
+                </motion.div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+
+        {/* ── All Equipment Grid ─────────────────────── */}
+        <div className="page-header" style={{ marginBottom: 12, marginTop: 12 }}>
+          <div className="page-header-left">
+            <h2 style={{ fontSize: 18 }}>All Equipment Data Grid</h2>
+            <p style={{ fontSize: 11 }}>Click any digital twin asset or card for granular sensor telemetry</p>
           </div>
-        </motion.div>
-      )}
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <div className="live-badge"><span className="live-dot" />Live Updates</div>
+          </div>
+        </div>
 
-      {/* ── All Equipment Grid ─────────────────────── */}
-      <div className="page-header" style={{ marginBottom: 12, marginTop: 12 }}>
-        <div className="page-header-left">
-          <h2 style={{ fontSize: 18 }}>All Equipment Data Grid</h2>
-          <p style={{ fontSize: 11 }}>Click any digital twin asset or card for granular sensor telemetry</p>
-        </div>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <div className="live-badge"><span className="live-dot" />Live Updates</div>
-        </div>
-      </div>
-
-      {equipment.length === 0 ? (
-        <motion.div className="card" style={{ textAlign: 'center', padding: '60px 40px' }}
-          initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>🏭</div>
-          <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>No Equipment Found</div>
-          <p style={{ color: '#64748b', marginBottom: 20 }}>Import equipment data to get started with predictive maintenance.</p>
-          <button className="btn btn-primary" onClick={() => navigate('/import')}>📂 Import Data →</button>
-        </motion.div>
-      ) : (
-        <div className="equipment-grid">
-          {equipment.map((e, i) => <EquipmentCard key={e._id} equipment={e} index={i} />)}
-        </div>
-      )}
+        {equipment.length === 0 ? (
+          <motion.div className="card" style={{ textAlign: 'center', padding: '60px 40px' }}
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            <div style={{ fontSize: 48, marginBottom: 16 }}>🏭</div>
+            <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>No Equipment Found</div>
+            <p style={{ color: '#64748b', marginBottom: 20 }}>Import equipment data to get started with predictive maintenance.</p>
+            <button className="btn btn-primary" onClick={() => navigate('/import')}>📂 Import Data →</button>
+          </motion.div>
+        ) : (
+          <div className="equipment-grid">
+            {equipment.map((e, i) => <EquipmentCard key={e._id} equipment={e} index={i} />)}
+          </div>
+        )}
       </div>
     </PageTransition>
   );

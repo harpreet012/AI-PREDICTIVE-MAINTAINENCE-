@@ -3,6 +3,9 @@ const router = express.Router();
 const Alert = require('../models/Alert');
 const Equipment = require('../models/Equipment');
 const SensorReading = require('../models/SensorReading');
+const { protect } = require('../middleware/auth');
+
+router.use(protect);
 
 // Get real anomalies from database
 router.get('/', async (req, res) => {
@@ -10,7 +13,7 @@ router.get('/', async (req, res) => {
     const { limit = 50, severity } = req.query;
     
     // Build query
-    const query = { acknowledged: false };
+    const query = { acknowledged: false, userId: req.user._id };
     if (severity && severity !== 'All') {
       query.severity = severity.toLowerCase();
     }

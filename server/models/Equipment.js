@@ -8,6 +8,12 @@ const equipmentSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
+    datasetId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Dataset',
+      required: false,
+      index: true,
+    },
     name: { type: String, required: true },
     type: {
       type: String,
@@ -17,7 +23,7 @@ const equipmentSchema = new mongoose.Schema(
     location: { type: String, required: true },
     manufacturer: { type: String, default: 'Unknown' },
     model: { type: String, default: 'N/A' },
-    serialNumber: { type: String, unique: true },
+    serialNumber: { type: String, required: true },
     status: {
       type: String,
       enum: ['healthy', 'warning', 'critical', 'offline', 'maintenance'],
@@ -44,5 +50,10 @@ const equipmentSchema = new mongoose.Schema(
 
 equipmentSchema.index({ isActive: 1, status: 1 });
 equipmentSchema.index({ healthScore: 1 });
+equipmentSchema.index({ userId: 1, isActive: 1 });
+equipmentSchema.index({ type: 1, status: 1 });
+equipmentSchema.index({ userId: 1, serialNumber: 1 }, { unique: true });
+equipmentSchema.index({ datasetId: 1, isActive: 1 });
+equipmentSchema.index({ userId: 1, datasetId: 1 });
 
 module.exports = mongoose.model('Equipment', equipmentSchema);

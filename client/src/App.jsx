@@ -3,24 +3,38 @@ import { Toaster } from 'react-hot-toast';
 import { AnimatePresence, motion } from 'framer-motion';
 import { SocketProvider } from './context/SocketContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { lazy, Suspense } from 'react';
 import Sidebar       from './components/Sidebar';
 import TopBar        from './components/TopBar';
 import ChatBot       from './components/ChatBot';
-import Dashboard     from './pages/Dashboard';
-import EquipmentPage from './pages/EquipmentPage';
-import EquipmentDetail from './pages/EquipmentDetail';
-import AlertsPage    from './pages/AlertsPage';
-import AnalyticsPage from './pages/AnalyticsPage';
-import DigitalTwinPage from './pages/DigitalTwinPage';
-import MaintenancePage from './pages/MaintenancePage';
-import DataImportPage  from './pages/DataImportPage';
-import DataInputPage   from './pages/DataInputPage';
-import UsersPage       from './pages/UsersPage';
 import LoginPage       from './pages/LoginPage';
 import RegisterPage    from './pages/RegisterPage';
-import AnomalyPage     from './pages/AnomalyPage';
-import CalendarPage    from './pages/CalendarPage';
 import './index.css';
+
+// Lazy load pages for code splitting
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const EquipmentPage = lazy(() => import('./pages/EquipmentPage'));
+const EquipmentDetail = lazy(() => import('./pages/EquipmentDetail'));
+const AlertsPage = lazy(() => import('./pages/AlertsPage'));
+const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
+const DigitalTwinPage = lazy(() => import('./pages/DigitalTwinPage'));
+const MaintenancePage = lazy(() => import('./pages/MaintenancePage'));
+const DataImportPage = lazy(() => import('./pages/DataImportPage'));
+const DataInputPage = lazy(() => import('./pages/DataInputPage'));
+const UsersPage = lazy(() => import('./pages/UsersPage'));
+const AnomalyPage = lazy(() => import('./pages/AnomalyPage'));
+const CalendarPage = lazy(() => import('./pages/CalendarPage'));
+const AssetLibrary = lazy(() => import('./pages/AssetLibrary'));
+const DatasetPage = lazy(() => import('./pages/DatasetPage'));
+
+// Loading component for lazy loaded routes
+function PageLoader() {
+  return (
+    <div className="loading-spinner" style={{ minHeight: '60vh' }}>
+      <div className="spinner" />
+    </div>
+  );
+}
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -48,18 +62,20 @@ function AnimatedRoutes() {
       <Routes location={location} key={location.pathname}>
         <Route path="/login"    element={<PublicRoute><LoginPage /></PublicRoute>} />
         <Route path="/register" element={<PublicRoute><RegisterPage /></PublicRoute>} />
-        <Route path="/data-input" element={<ProtectedRoute><DataInputPage /></ProtectedRoute>} />
-        <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-        <Route path="/equipment" element={<ProtectedRoute><EquipmentPage /></ProtectedRoute>} />
-        <Route path="/equipment/:id" element={<ProtectedRoute><EquipmentDetail /></ProtectedRoute>} />
-        <Route path="/digital-twin" element={<ProtectedRoute><DigitalTwinPage /></ProtectedRoute>} />
-        <Route path="/alerts" element={<ProtectedRoute><AlertsPage /></ProtectedRoute>} />
-        <Route path="/analytics" element={<ProtectedRoute><AnalyticsPage /></ProtectedRoute>} />
-        <Route path="/maintenance" element={<ProtectedRoute><MaintenancePage /></ProtectedRoute>} />
-        <Route path="/import" element={<ProtectedRoute><DataImportPage /></ProtectedRoute>} />
-        <Route path="/users" element={<ProtectedRoute><UsersPage /></ProtectedRoute>} />
-        <Route path="/anomalies" element={<ProtectedRoute><AnomalyPage /></ProtectedRoute>} />
-        <Route path="/calendar"  element={<ProtectedRoute><CalendarPage /></ProtectedRoute>} />
+        <Route path="/data-input" element={<ProtectedRoute><Suspense fallback={<PageLoader />}><DataInputPage /></Suspense></ProtectedRoute>} />
+        <Route path="/" element={<ProtectedRoute><Suspense fallback={<PageLoader />}><Dashboard /></Suspense></ProtectedRoute>} />
+        <Route path="/asset-library" element={<ProtectedRoute><Suspense fallback={<PageLoader />}><AssetLibrary /></Suspense></ProtectedRoute>} />
+        <Route path="/dataset/:id" element={<ProtectedRoute><Suspense fallback={<PageLoader />}><DatasetPage /></Suspense></ProtectedRoute>} />
+        <Route path="/equipment" element={<ProtectedRoute><Suspense fallback={<PageLoader />}><EquipmentPage /></Suspense></ProtectedRoute>} />
+        <Route path="/equipment/:id" element={<ProtectedRoute><Suspense fallback={<PageLoader />}><EquipmentDetail /></Suspense></ProtectedRoute>} />
+        <Route path="/digital-twin" element={<ProtectedRoute><Suspense fallback={<PageLoader />}><DigitalTwinPage /></Suspense></ProtectedRoute>} />
+        <Route path="/alerts" element={<ProtectedRoute><Suspense fallback={<PageLoader />}><AlertsPage /></Suspense></ProtectedRoute>} />
+        <Route path="/analytics" element={<ProtectedRoute><Suspense fallback={<PageLoader />}><AnalyticsPage /></Suspense></ProtectedRoute>} />
+        <Route path="/maintenance" element={<ProtectedRoute><Suspense fallback={<PageLoader />}><MaintenancePage /></Suspense></ProtectedRoute>} />
+        <Route path="/import" element={<ProtectedRoute><Suspense fallback={<PageLoader />}><DataImportPage /></Suspense></ProtectedRoute>} />
+        <Route path="/users" element={<ProtectedRoute><Suspense fallback={<PageLoader />}><UsersPage /></Suspense></ProtectedRoute>} />
+        <Route path="/anomalies" element={<ProtectedRoute><Suspense fallback={<PageLoader />}><AnomalyPage /></Suspense></ProtectedRoute>} />
+        <Route path="/calendar"  element={<ProtectedRoute><Suspense fallback={<PageLoader />}><CalendarPage /></Suspense></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AnimatePresence>

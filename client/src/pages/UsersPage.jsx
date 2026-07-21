@@ -1,13 +1,10 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import axios from 'axios';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import PageTransition from '../components/PageTransition';
 import ConfirmModal from '../components/ConfirmModal';
-import { API_URL } from '../config';
-
-const API = API_URL;
+import { userAPI } from '../services/api';
 
 const ROLES = ['admin', 'operator', 'viewer'];
 const ROLE_COLORS = { admin: '#f59e0b', operator: '#3b82f6', viewer: '#64748b' };
@@ -16,15 +13,12 @@ const ROLE_ICONS  = { admin: '👑', operator: '🔧', viewer: '👁️' };
 function AddUserModal({ onClose, onCreated }) {
   const [form, setForm] = useState({ name: '', email: '', password: '', role: 'viewer' });
   const [loading, setLoading] = useState(false);
-  const { token } = useAuth();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     try {
-      const { data } = await axios.post(`${API}/users`, form, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const { data } = await userAPI.create(form);
       toast.success('User created!');
       onCreated(data.data);
       onClose();
@@ -94,11 +88,11 @@ export default function UsersPage() {
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [confirm, setConfirm] = useState({ open: false, userId: null, userName: '' });
-  const { token, user: me, isAdmin } = useAuth();
+  const { user: me, isAdmin } = useAuth();
 
   const fetchUsers = async () => {
     try {
-      const { data } = await axios.get(`${API}/users`, { headers: { Authorization: `Bearer ${token}` } });
+      const { data } = await userAPI.getAll();
       setUsers(data.data);
     } catch (err) {
       toast.error('Failed to load users');
@@ -111,7 +105,7 @@ export default function UsersPage() {
 
   const toggleActive = async (id, current) => {
     try {
-      await axios.patch(`${API}/users/${id}`, { isActive: !current }, { headers: { Authorization: `Bearer ${token}` } });
+      await userAPI.update(id, { isActive: !current });
       setUsers(prev => prev.map(u => u._id === id ? { ...u, isActive: !current } : u));
       toast.success('Status updated');
     } catch { toast.error('Update failed'); }
@@ -119,7 +113,7 @@ export default function UsersPage() {
 
   const changeRole = async (id, role) => {
     try {
-      await axios.patch(`${API}/users/${id}`, { role }, { headers: { Authorization: `Bearer ${token}` } });
+      await userAPI.update(id, { role });
       setUsers(prev => prev.map(u => u._id === id ? { ...u, role } : u));
       toast.success('Role updated');
     } catch { toast.error('Update failed'); }
@@ -127,7 +121,7 @@ export default function UsersPage() {
 
   const deleteUser = async (id) => {
     try {
-      await axios.delete(`${API}/users/${id}`, { headers: { Authorization: `Bearer ${token}` } });
+      await userAPI.delete(id);
       setUsers(prev => prev.filter(u => u._id !== id));
       toast.success('User deleted');
     } catch (err) {

@@ -1,13 +1,11 @@
 import { useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { motion, AnimatePresence } from 'framer-motion';
-import axios from 'axios';
 import toast from 'react-hot-toast';
-import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { Upload, FileSpreadsheet, CheckCircle, AlertCircle, Eye, Trash2, Download } from 'lucide-react';
+import { Upload, FileSpreadsheet, CheckCircle, AlertCircle, Eye, Trash2, Download, Building2, MapPin, FileText } from 'lucide-react';
 import PageTransition from '../components/PageTransition';
-import { API_URL, ML_URL } from '../config';
+import { importAPI } from '../services/api';
 
 const SAMPLE_DATA = [
   { UID: 1, ProductType: 'Extruder',         Humidity: 5.88,  Temperature: 66.17, Age: 13, Quantity: 39764, MTTF: 69  },
@@ -48,9 +46,14 @@ export default function DataImportPage() {
   const [result,     setResult]     = useState(null);
   const [loading,    setLoading]    = useState(false);
   const [previewing, setPreviewing] = useState(false);
-  const { token } = useAuth();
+  const [showFactoryForm, setShowFactoryForm] = useState(false);
+  const [factoryData, setFactoryData] = useState({
+    factoryName: '',
+    location: '',
+    description: ''
+  });
 
-  const step = result ? 3 : preview ? 2 : file ? 1.5 : 1;
+  const step = result ? 4 : showFactoryForm ? 3 : preview ? 2 : file ? 1.5 : 1;
 
   const onDrop = useCallback(async (accepted) => {
     const f = accepted[0];
@@ -59,27 +62,18 @@ export default function DataImportPage() {
     setResult(null);
     setPreviewing(true);
     try {
-      const fd = new FormData();
-      fd.append('file', f);
-      console.log('Previewing file:', f.name);
-      const { data } = await axios.post(`${API_URL}/import/preview`, fd, {
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' }
-      });
+      const { data } = await importAPI.preview(f);
       setPreview(data.rows);
       setTotal(data.total);
       console.log('Parsed rows:', data.total, 'Sample:', data.rows?.[0]);
-      toast.success(`Parsed ${data.total} rows! Auto-importing...`);
-      
-      setTimeout(() => {
-        handleImport(f);
-      }, 1000);
+      toast.success(`Parsed ${data.total} rows. Review the preview, then provide factory information.`);
     } catch (err) {
       toast.error('Could not parse file: ' + (err?.response?.data?.error || err.message));
       setFile(null);
     } finally {
       setPreviewing(false);
     }
-  }, [token]);
+  }, []);
 
   const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
     onDrop,
@@ -92,50 +86,20 @@ export default function DataImportPage() {
     maxSize: 10 * 1024 * 1024,
   });
 
-  const handleImport = async (fileToImport) => {
-    const activeFile = fileToImport && fileToImport instanceof File ? fileToImport : file;
+  const handleImport = async () => {
+    if (!factoryData.factoryName.trim() || !factoryData.location.trim()) {
+      toast.error('Factory name and location are required');
+      return;
+    }
+    
+    const activeFile = file;
     if (!activeFile) return;
     setLoading(true);
     try {
-      const fd = new FormData();
-      fd.append('file', activeFile);
-      console.log('Uploading file to:', `${API_URL}/import/equipment`);
-      const { data } = await axios.post(`${API_URL}/import/equipment`, fd, {
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' }
-      });
+      const { data } = await importAPI.import(activeFile, factoryData);
       console.log('Import success:', data);
       setResult(data);
-      toast.success(`✅ Import complete! ${data.created} created, ${data.updated} updated.`);
-
-      try {
-        if (preview && preview.length > 0) {
-          const uploadRes = await axios.post(`${API_URL}/upload`, preview);
-          if (uploadRes?.data?.datasetId) {
-            localStorage.setItem("datasetId", uploadRes.data.datasetId);
-          }
-        }
-      } catch (err) {
-        console.log(err);
-      }
-
-      navigate("/dashboard");
-
-      // Call ML service with a sample of the parsed data for anomaly prediction
-      try {
-        const sampleRow = preview?.[0];
-        if (sampleRow) {
-          console.log('Calling ML service with sample:', sampleRow);
-          const mlRes = await fetch(`${ML_URL}/predict`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(sampleRow),
-          });
-          const mlData = await mlRes.json();
-          console.log('ML Predictions:', mlData);
-        }
-      } catch (mlErr) {
-        console.warn('ML service call failed (non-critical):', mlErr.message);
-      }
+      toast.success(`✅ Import complete! ${data.data?.equipmentCreated || 0} created, ${data.data?.equipmentUpdated || 0} updated.`);
     } catch (err) {
       console.error('Import failed:', err);
       toast.error(err?.response?.data?.error || 'Import failed');
@@ -144,7 +108,14 @@ export default function DataImportPage() {
     }
   };
 
-  const reset = () => { setFile(null); setPreview(null); setResult(null); setTotal(0); };
+  const reset = () => { 
+    setFile(null); 
+    setPreview(null); 
+    setResult(null); 
+    setTotal(0); 
+    setShowFactoryForm(false);
+    setFactoryData({ factoryName: '', location: '', description: '' });
+  };
 
   const columns = preview?.[0] ? Object.keys(preview[0]) : [];
 
@@ -182,13 +153,13 @@ export default function DataImportPage() {
           
           <motion.button
             className="btn btn-primary"
-            onClick={file && !previewing && !loading ? handleImport : open}
+            onClick={file && !previewing && !loading && !showFactoryForm ? () => setShowFactoryForm(true) : open}
             disabled={loading || previewing}
             style={{ opacity: (loading || previewing) ? 0.6 : 1, gap: 8, padding: '8px 20px', boxShadow: '0 0 20px rgba(59,130,246,0.3)' }}
             whileHover={{ scale: 1.04, boxShadow: '0 0 25px rgba(59,130,246,0.5)' }}
             whileTap={{ scale: 0.96 }}
           >
-            <Upload size={14} /> {loading ? 'Importing...' : 'Import Data'}
+            <Upload size={14} /> {loading ? 'Importing...' : showFactoryForm ? 'Provide Factory Info' : 'Import Data'}
           </motion.button>
         </div>
       </div>
@@ -201,9 +172,11 @@ export default function DataImportPage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <StepBadge step={1} label="Upload File"    active={step === 1}   done={step >= 1.5} />
           <div style={{ flex: 1, height: 1, background: step >= 1.5 ? '#10b981' : 'rgba(255,255,255,0.06)', minWidth: 20, transition: 'background 0.5s' }} />
-          <StepBadge step={2} label="Preview Data"   active={step === 1.5 || step === 2} done={step === 3} />
-          <div style={{ flex: 1, height: 1, background: step === 3 ? '#10b981' : 'rgba(255,255,255,0.06)', minWidth: 20, transition: 'background 0.5s' }} />
-          <StepBadge step={3} label="Import & Done"  active={step === 3}   done={step === 3} />
+          <StepBadge step={2} label="Preview Data"   active={step === 1.5 || step === 2} done={step >= 3} />
+          <div style={{ flex: 1, height: 1, background: step >= 3 ? '#10b981' : 'rgba(255,255,255,0.06)', minWidth: 20, transition: 'background 0.5s' }} />
+          <StepBadge step={3} label="Factory Info"  active={step === 3}   done={step === 4} />
+          <div style={{ flex: 1, height: 1, background: step === 4 ? '#10b981' : 'rgba(255,255,255,0.06)', minWidth: 20, transition: 'background 0.5s' }} />
+          <StepBadge step={4} label="Import & Done"  active={step === 4}   done={step === 4} />
         </div>
       </motion.div>
 
@@ -269,7 +242,7 @@ export default function DataImportPage() {
 
       {/* ── Drop Zone & Action Bar ── */}
       <AnimatePresence mode="wait">
-        {!file && !previewing && !result && (
+        {!file && !previewing && !result && !showFactoryForm && (
           <motion.div
             key="dropzone"
             {...getRootProps()}
@@ -320,7 +293,7 @@ export default function DataImportPage() {
           </motion.div>
         )}
 
-        {file && !previewing && !result && (
+        {file && !previewing && !result && !showFactoryForm && (
           <motion.div
             key="ready"
             className="card"
@@ -353,8 +326,7 @@ export default function DataImportPage() {
                 Cancel
               </motion.button>
               <motion.button
-                onClick={handleImport}
-                disabled={loading}
+                onClick={() => setShowFactoryForm(true)}
                 whileHover={{ scale: 1.04, boxShadow: '0 0 24px rgba(16,185,129,0.4)' }}
                 whileTap={{ scale: 0.96 }}
                 style={{ 
@@ -363,12 +335,94 @@ export default function DataImportPage() {
                   display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer'
                 }}
               >
-                {loading ? (
-                  <><motion.span animate={{ rotate: 360 }} transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}>⟳</motion.span> Importing…</>
-                ) : (
-                  <><Upload size={16} /> Import Data</>
-                )}
+                <Upload size={16} /> Provide Factory Info
               </motion.button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Factory Information Form ── */}
+      <AnimatePresence>
+        {showFactoryForm && !result && (
+          <motion.div
+            key="factory-form"
+            className="card mb-6"
+            initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+            transition={{ type: 'spring', stiffness: 200 }}
+          >
+            <div className="card-header">
+              <div>
+                <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Building2 size={16} color="#3b82f6" />
+                  Factory Information
+                </div>
+                <div className="card-subtitle">
+                  Provide details about the factory/plant where this data originates
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gap: 16, maxWidth: 600 }}>
+              <div className="form-group">
+                <label className="form-label">
+                  Factory Name <span style={{ color: '#ef4444' }}>*</span>
+                </label>
+                <input
+                  className="form-input"
+                  placeholder="e.g. North Plant"
+                  value={factoryData.factoryName}
+                  onChange={(e) => setFactoryData({ ...factoryData, factoryName: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">
+                  Location <span style={{ color: '#ef4444' }}>*</span>
+                </label>
+                <input
+                  className="form-input"
+                  placeholder="e.g. Detroit, Michigan"
+                  value={factoryData.location}
+                  onChange={(e) => setFactoryData({ ...factoryData, location: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">
+                  Description
+                </label>
+                <textarea
+                  className="form-input"
+                  placeholder="Optional description of this factory/plant"
+                  value={factoryData.description}
+                  onChange={(e) => setFactoryData({ ...factoryData, description: e.target.value })}
+                  rows={3}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
+                <motion.button
+                  className="btn btn-secondary"
+                  onClick={() => setShowFactoryForm(false)}
+                  whileHover={{ scale: 1.04 }}
+                  whileTap={{ scale: 0.96 }}
+                >
+                  Back
+                </motion.button>
+                <motion.button
+                  className="btn btn-primary"
+                  onClick={handleImport}
+                  disabled={loading || !factoryData.factoryName.trim() || !factoryData.location.trim()}
+                  whileHover={{ scale: 1.04 }}
+                  whileTap={{ scale: 0.96 }}
+                  style={{ opacity: (loading || !factoryData.factoryName.trim() || !factoryData.location.trim()) ? 0.6 : 1 }}
+                >
+                  {loading ? 'Importing...' : 'Start Import'}
+                </motion.button>
+              </div>
             </div>
           </motion.div>
         )}
@@ -376,7 +430,7 @@ export default function DataImportPage() {
 
       {/* ── Preview Table ── */}
       <AnimatePresence>
-        {preview && !previewing && (
+        {preview && !previewing && !showFactoryForm && (
           <motion.div
             className="card mb-6"
             initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
@@ -461,10 +515,10 @@ export default function DataImportPage() {
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 20 }}>
               {[
-                { label: 'Total Rows', value: result.total,    color: '#3b82f6', icon: '📄' },
-                { label: 'Created',    value: result.created,  color: '#10b981', icon: '✅' },
-                { label: 'Updated',    value: result.updated,  color: '#f59e0b', icon: '🔄' },
-                { label: 'Readings',   value: result.readings, color: '#8b5cf6', icon: '📡' },
+                { label: 'Total Rows', value: result.data?.total || result.total,    color: '#3b82f6', icon: '📄' },
+                { label: 'Created',    value: result.data?.equipmentCreated || result.created,  color: '#10b981', icon: '✅' },
+                { label: 'Updated',    value: result.data?.equipmentUpdated || result.updated,  color: '#f59e0b', icon: '🔄' },
+                { label: 'Readings',   value: result.data?.sensorReadingsImported || result.readings, color: '#8b5cf6', icon: '📡' },
               ].map((s, i) => (
                 <motion.div
                   key={s.label}
@@ -483,9 +537,9 @@ export default function DataImportPage() {
               <motion.button className="btn btn-secondary" onClick={reset} whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}>
                 📂 Import Another File
               </motion.button>
-              <motion.a className="btn btn-primary" href="/" whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}>
-                🏭 View Dashboard →
-              </motion.a>
+              <motion.button className="btn btn-primary" onClick={() => navigate('/asset-library')} whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}>
+                🏭 View Asset Library →
+              </motion.button>
             </div>
           </motion.div>
         )}

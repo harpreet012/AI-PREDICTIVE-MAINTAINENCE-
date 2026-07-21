@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, useRef } from 'react';
+import { createContext, useContext, useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { io } from 'socket.io-client';
 import { BACKEND_URL } from '../config';
 
@@ -42,22 +42,24 @@ export function SocketProvider({ children }) {
     return () => s.disconnect();
   }, []);
 
-  const onNewAlert = (cb) => {
+  const onNewAlert = useCallback((cb) => {
     alertCallbacksRef.current.push(cb);
     return () => {
       alertCallbacksRef.current = alertCallbacksRef.current.filter(f => f !== cb);
     };
-  };
+  }, []);
 
-  const subscribeToEquipment = (equipmentId) => {
+  const subscribeToEquipment = useCallback((equipmentId) => {
     if (socket) socket.emit('subscribe:equipment', equipmentId);
-  };
+  }, [socket]);
+
+  const contextValue = useMemo(() => ({
+    socket, connected, liveReadings, fleetSummary, liveAlerts,
+    subscribeToEquipment, onNewAlert,
+  }), [socket, connected, liveReadings, fleetSummary, liveAlerts, subscribeToEquipment, onNewAlert]);
 
   return (
-    <SocketContext.Provider value={{
-      socket, connected, liveReadings, fleetSummary, liveAlerts,
-      subscribeToEquipment, onNewAlert,
-    }}>
+    <SocketContext.Provider value={contextValue}>
       {children}
     </SocketContext.Provider>
   );

@@ -3,14 +3,15 @@ import { equipmentAPI } from '../services/api';
 import EquipmentCard from '../components/EquipmentCard';
 import { useSocket } from '../context/SocketContext';
 import { useAuth } from '../context/AuthContext';
-import { Search, Plus, Filter, X } from 'lucide-react';
+import { Search, Plus, Filter, X, Download } from 'lucide-react';
 import PageTransition from '../components/PageTransition';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
+import { EQUIPMENT_TYPES, EQUIPMENT_STATUS } from '../constants';
+import { exportEquipment } from '../utils/export';
 
-const TYPES = ['All', 'Compressor', 'Motor', 'Pump', 'Turbine', 'Generator', 'Conveyor', 'CNC Machine', 'Boiler'];
-const STATUSES = ['All', 'healthy', 'warning', 'critical', 'offline', 'maintenance'];
-const EQUIPMENT_TYPES = ['Compressor', 'Pump', 'Motor', 'Turbine', 'Generator', 'Conveyor', 'CNC Machine', 'Boiler'];
+const TYPES = ['All', ...EQUIPMENT_TYPES];
+const STATUSES = ['All', ...EQUIPMENT_STATUS];
 
 const EMPTY_FORM = {
   name: '',
@@ -262,6 +263,11 @@ export default function EquipmentPage() {
     setTotalCount((c) => c - 1);
   };
 
+  const handleExport = () => {
+    exportEquipment(displayEquipment);
+    toast.success('Equipment data exported successfully');
+  };
+
   return (
     <PageTransition>
       <div className="page-header">
@@ -269,18 +275,30 @@ export default function EquipmentPage() {
           <h2>Equipment Registry</h2>
           <p>{totalCount} total assets registered (Page {page} of {totalPages})</p>
         </div>
-        {canAdd && (
+        <div style={{ display: 'flex', gap: 10 }}>
           <motion.button
-            className="btn btn-primary"
-            onClick={() => setShowAdd(true)}
+            className="btn btn-secondary"
+            onClick={handleExport}
             whileHover={{ scale: 1.04 }}
             whileTap={{ scale: 0.96 }}
             style={{ display: 'flex', alignItems: 'center', gap: 7 }}
           >
-            <Plus size={16} />
-            Add Equipment
+            <Download size={16} />
+            Export
           </motion.button>
-        )}
+          {canAdd && (
+            <motion.button
+              className="btn btn-primary"
+              onClick={() => setShowAdd(true)}
+              whileHover={{ scale: 1.04 }}
+              whileTap={{ scale: 0.96 }}
+              style={{ display: 'flex', alignItems: 'center', gap: 7 }}
+            >
+              <Plus size={16} />
+              Add Equipment
+            </motion.button>
+          )}
+        </div>
       </div>
 
       {/* Filters */}

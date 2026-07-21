@@ -13,19 +13,23 @@ router.get('/:equipmentId', async (req, res) => {
     const limit  = parseInt(req.query.limit)  || 100;
     const skip   = parseInt(req.query.skip)   || 0;
     const hours  = parseInt(req.query.hours)  || 24;
+    const { datasetId } = req.query;
 
     const since = new Date(Date.now() - hours * 60 * 60 * 1000);
 
-    const readings = await SensorReading.find({
+    const query = {
       equipmentId,
       userId: req.user._id,
       timestamp: { $gte: since },
-    })
+    };
+    if (datasetId) query.datasetId = datasetId;
+
+    const readings = await SensorReading.find(query)
       .sort({ timestamp: -1 })
       .limit(limit)
       .skip(skip);
 
-    const total = await SensorReading.countDocuments({ equipmentId, userId: req.user._id, timestamp: { $gte: since } });
+    const total = await SensorReading.countDocuments(query);
 
     res.json({ success: true, data: readings.reverse(), total });
   } catch (err) {

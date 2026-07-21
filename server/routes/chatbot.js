@@ -1,15 +1,45 @@
-const express  = require('express');
-const router   = express.Router();
+const express = require('express');
+const router = express.Router();
 const { protect } = require('../middleware/auth');
-const Equipment    = require('../models/Equipment');
-const Alert        = require('../models/Alert');
+const Equipment = require('../models/Equipment');
+const Alert = require('../models/Alert');
 const SensorReading = require('../models/SensorReading');
+const Conversation = require('../models/Conversation');
+const { v4: uuidv4 } = require('uuid');
 
 // POST /api/chat
 router.post('/', protect, async (req, res) => {
   try {
-    const { message, context } = req.body;
+    const { message, context, sessionId } = req.body;
     if (!message) return res.status(400).json({ success: false, error: 'Message required' });
+
+    // Get or create conversation session
+    let conversation;
+    const currentSessionId = sessionId || uuidv4();
+    
+    if (sessionId) {
+      conversation = await Conversation.findOne({ 
+        userId: req.user._id, 
+        sessionId,
+        isActive: true 
+      });
+    }
+    
+    if (!conversation) {
+      conversation = await Conversation.create({
+        userId: req.user._id,
+        sessionId: currentSessionId,
+        messages: [],
+      });
+    }
+
+    // Add user message to conversation
+    conversation.messages.push({
+      role: 'user',
+      content: message,
+      timestamp: new Date(),
+      context,
+    });
 
     // ── Gather live context from DB ──────────────────────────────────
     let dbContext = '';
@@ -44,20 +74,24 @@ Recent Critical Alerts: ${alerts.filter(a => a.severity === 'critical').slice(0,
 ${context?.equipmentName ? `\n=== FOCUSED MACHINE ===\nName: ${context.equipmentName}\nHealth: ${context.healthScore}% | Failure Risk: ${context.failureProbability}%\nTemperature: ${context.temperature?.toFixed(1)}°C | Vibration: ${context.vibration?.toFixed(2)} mm/s` : ''}`;
     } catch (_) {}
 
-    const apiKey = process.env.OPENAI_API_KEY || '';
+    // Build conversation history for context (last 10 messages)
+    const conversationHistory = conversation.messages.slice(-10).map(msg => ({
+      role: msg.role,
+      content: msg.content,
+    }));
 
-    // ── OpenAI GPT-4o-mini integration ──────────────────────────────
-    if (apiKey) {
-      try {
-        const OpenAI = require('openai');
-        const client = new OpenAI.default({ apiKey });
+    // ── Groq Integration ──────────────────────────────
+    const OpenAI = require('openai');
+    const client = new OpenAI.default({
+      apiKey: process.env.GROQ_API_KEY,
+      baseURL: "https://api.groq.com/openai/v1",
+    });
 
-        const completion = await client.chat.completions.create({
-          model: 'gpt-4o-mini',
-          messages: [
-            {
-              role: 'system',
-              content: `You are an expert AI Predictive Maintenance Assistant for an industrial factory. You have real-time access to machine sensor data and provide actionable maintenance insights.
+    try {
+      const messages = [
+        {
+          role: 'system',
+          content: `You are an expert AI Predictive Maintenance Assistant for an industrial factory. You have real-time access to machine sensor data and provide actionable maintenance insights.
 
 Your expertise covers:
 - Predictive & preventive maintenance strategies  
@@ -74,20 +108,42 @@ Response Guidelines:
 - Assign urgency: 🔴 CRITICAL (act now), 🟡 WARNING (act within 48h), 🟢 INFO (monitor).
 - For critical machines always recommend immediate shutdown/inspection if needed.
 - Keep responses under 300 words unless a detailed analysis is requested.
-- Use emojis sparingly for readability.`,
-            },
-            { role: 'user', content: message },
-          ],
-          max_tokens: 500,
-          temperature: 0.65,
-        });
+- Use emojis sparingly for readability.
+- Remember previous context from the conversation history.`,
+        },
+        ...conversationHistory,
+      ];
 
-        const reply = completion.choices[0]?.message?.content || 'Unable to generate response.';
-        return res.json({ success: true, reply, aiEnabled: true, model: 'gpt-4o-mini' });
-      } catch (aiErr) {
-        console.error('OpenAI error:', aiErr.message);
-        // Fall through to rule-based fallback
-      }
+      const completion = await client.chat.completions.create({
+        model: "llama-3.3-70b-versatile",   // Best overall choice
+        // model: "llama-3.1-8b-instant",   // Fastest (uncomment if needed)
+        // model: "qwen/qwen3-32b",         // Good for coding/technical
+        messages,
+        max_tokens: 500,
+        temperature: 0.65,
+      });
+
+      const reply = completion.choices[0]?.message?.content || 'Unable to generate response.';
+      
+      // Add assistant response to conversation
+      conversation.messages.push({
+        role: 'assistant',
+        content: reply,
+        timestamp: new Date(),
+      });
+      conversation.lastActivity = new Date();
+      await conversation.save();
+
+      return res.json({ 
+        success: true, 
+        reply, 
+        aiEnabled: true, 
+        model: 'llama-3.3-70b-versatile',
+        sessionId: currentSessionId 
+      });
+    } catch (aiErr) {
+      console.error('Groq error:', aiErr.message);
+      // Fall through to rule-based fallback
     }
 
     // ── Rule-based fallback ─────────────────────────────────────────
@@ -118,12 +174,58 @@ Response Guidelines:
     } else if (lower.includes('alert') || lower.includes('alarm') || lower.includes('notification')) {
       reply = `🚨 **Alert Management Guide:**\n\n• 🔴 **Critical alerts** — Respond within 1 hour. Risk of equipment damage or safety hazard.\n• 🟡 **Warning alerts** — Respond within 24–48 hours. Equipment degradation detected.\n• 🔵 **Info alerts** — Review and log. No immediate action required.\n\nTip: Visit the **Alerts page** to acknowledge and track all active alerts. Unacknowledged critical alerts require priority action!`;
     } else {
-      reply = `🤖 I'm your AI Predictive Maintenance Assistant.\n\nYou can ask me about:\n• Equipment health & fleet status\n• Critical alerts & failure predictions\n• Vibration, temperature, pressure analysis\n• Maintenance scheduling & recommendations\n• Specific machine performance\n\n💡 *Tip: Add your OpenAI API key for full AI-powered responses with natural language understanding.*`;
+      reply = `🤖 I'm your AI Predictive Maintenance Assistant.\n\nYou can ask me about:\n• Equipment health & fleet status\n• Critical alerts & failure predictions\n• Vibration, temperature, pressure analysis\n• Maintenance scheduling & recommendations\n• Specific machine performance\n\n💡 *Tip: Make sure GROQ_API_KEY is set in your environment for full AI-powered responses.*`;
     }
 
-    return res.json({ success: true, reply, aiEnabled: false });
+    // Add assistant response to conversation
+    conversation.messages.push({
+      role: 'assistant',
+      content: reply,
+      timestamp: new Date(),
+    });
+    conversation.lastActivity = new Date();
+    await conversation.save();
+
+    return res.json({ 
+      success: true, 
+      reply, 
+      aiEnabled: false,
+      sessionId: currentSessionId 
+    });
   } catch (err) {
     console.error('Chatbot error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/chat/history - Get conversation history
+router.get('/history', protect, async (req, res) => {
+  try {
+    const conversations = await Conversation.find({ 
+      userId: req.user._id, 
+      isActive: true 
+    })
+    .sort({ lastActivity: -1 })
+    .limit(20)
+    .select('sessionId messages lastActivity');
+    
+    res.json({ success: true, data: conversations });
+  } catch (err) {
+    console.error('Get history error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// DELETE /api/chat/:sessionId - End conversation
+router.delete('/:sessionId', protect, async (req, res) => {
+  try {
+    await Conversation.updateOne(
+      { userId: req.user._id, sessionId: req.params.sessionId },
+      { isActive: false }
+    );
+    res.json({ success: true, message: 'Conversation ended' });
+  } catch (err) {
+    console.error('Delete conversation error:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });

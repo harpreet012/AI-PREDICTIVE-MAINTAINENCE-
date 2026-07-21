@@ -1,14 +1,16 @@
 import { useEffect, useState, useCallback } from 'react';
 import { alertAPI } from '../services/api';
 import { useSocket } from '../context/SocketContext';
-import { CheckCheck, Trash2, Filter, RefreshCw } from 'lucide-react';
+import { CheckCheck, Trash2, Filter, RefreshCw, Download } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import toast from 'react-hot-toast';
 import PageTransition from '../components/PageTransition';
 import { motion, AnimatePresence } from 'framer-motion';
+import { ALERT_SEVERITY, ALERT_TYPES } from '../constants';
+import { exportAlerts } from '../utils/export';
 
-const SEVERITY_OPTIONS = ['all', 'critical', 'warning', 'info'];
-const TYPE_OPTIONS     = ['all', 'anomaly', 'degradation', 'threshold', 'prediction', 'scheduled'];
+const SEVERITY_OPTIONS = ['all', ...ALERT_SEVERITY];
+const TYPE_OPTIONS     = ['all', ...ALERT_TYPES];
 
 function AlertRow({ alert, index = 0, onAck, onResolve, onDelete }) {
   return (
@@ -127,6 +129,11 @@ export default function AlertsPage() {
     toast.success('All alerts acknowledged');
   };
 
+  const handleExport = () => {
+    exportAlerts(alerts);
+    toast.success('Alerts data exported successfully');
+  };
+
   return (
     <PageTransition>
       <div className="page-header">
@@ -135,6 +142,9 @@ export default function AlertsPage() {
           <p>{counts.unread} unread · {counts.critical} critical · {counts.total} total</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
+          <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="btn btn-secondary btn-sm" onClick={handleExport}>
+            <Download size={12} /> Export
+          </motion.button>
           <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="btn btn-secondary btn-sm" onClick={fetchAlerts}>
             <RefreshCw size={12} /> Refresh
           </motion.button>

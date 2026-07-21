@@ -1,205 +1,47 @@
-from flask import Flask, request, jsonify
-from flask_cors import CORS
+from pathlib import Path
 import pickle
-import os
-import numpy as np
-import pandas as pd
-from sklearn.preprocessing import StandardScaler
+from flask import Flask, jsonify, request
+from flask_cors import CORS
+from train import FEATURES, train_model
 
-app = Flask(__name__)
-CORS(app)
-
-# Global variables to hold model state
-model = None
-scaler = None
-stats = None
-features = []
-
+app = Flask(__name__); CORS(app)
+artifact = None
 def load_model():
-    global model, scaler, stats, features
-    model_path = os.path.join(os.path.dirname(__file__), 'model.pkl')
+    global artifact
     try:
-        with open(model_path, 'rb') as f:
-            artifact = pickle.load(f)
-            model = artifact.get('model')
-            scaler = artifact.get('scaler')
-            stats = artifact.get('stats')
-            features = artifact.get('features', ['temperature', 'vibration', 'pressure', 'rpm', 'current'])
-        model_type = type(model).__name__
-        print(f"✅ ML Model loaded successfully! Type: {model_type}")
-    except Exception as e:
-        print(f"❌ Failed to load model. Did you run train.py first? Error: {e}")
-        model, scaler, stats, features = None, None, None, []
-
-# Initialize model on startup
+        with open(Path(__file__).with_name('model.pkl'), 'rb') as handle:
+            candidate = pickle.load(handle)
+        artifact = candidate if candidate.get('dataset') == 'AI4I 2020' else None
+    except Exception: artifact = None
 load_model()
-
-def get_feature_importance(features_dict, stats_dict):
-    """
-    Calculate the deviation (Z-score) of each feature from the training mean.
-    The highest deviations are the most "important" reasons for the anomaly.
-    """
-    deviations = {}
-    for feature, value in features_dict.items():
-        if feature in stats_dict['mean'] and feature in stats_dict['std'] and stats_dict['std'][feature] > 0:
-            z_score = abs(value - stats_dict['mean'][feature]) / stats_dict['std'][feature]
-            deviations[feature] = z_score
-            
-    total_dev = sum(deviations.values())
-    if total_dev == 0:
-        return {k: 0 for k in deviations.keys()}
-        
-    importance = {k: round((v / total_dev) * 100, 1) for k, v in deviations.items()}
-    return dict(sorted(importance.items(), key=lambda item: item[1], reverse=True))
-
-@app.route('/')
-def home():
-    return 'ML Service Running 🚀'
-
-@app.route('/predict', methods=['POST'])
+def value(data, *keys, default=0):
+    for key in keys:
+        if key in data:
+            try: return float(data[key])
+            except (TypeError, ValueError): pass
+    return default
+def frame(data):
+    source = data.get('sensorData', data)
+    return {'Type': str(source.get('Type', source.get('type', 'L'))), 'Air temperature [K]': value(source, 'Air temperature [K]', 'airTemperature', 'temperature', default=298.1), 'Process temperature [K]': value(source, 'Process temperature [K]', 'processTemperature', 'temperature', default=308.6), 'Rotational speed [rpm]': value(source, 'Rotational speed [rpm]', 'rpm', default=1500), 'Torque [Nm]': value(source, 'Torque [Nm]', 'current', default=40), 'Tool wear [min]': value(source, 'Tool wear [min]', 'toolWear', default=100)}
+@app.get('/')
+def home(): return jsonify(success=True, service='predictive-maintenance-ml')
+@app.get('/health')
+def health(): return jsonify(success=True, data={'model_loaded': artifact is not None, 'dataset': artifact.get('dataset') if artifact else None, 'features': FEATURES})
+@app.post('/predict')
 def predict():
-    if not model or not features:
-        return jsonify({"error": "Model not loaded"}), 500
-
+    if artifact is None: return jsonify(success=False, error='AI4I model is not trained. Run train.py before serving predictions.'), 503
     try:
-        data = request.json
-        
-        # Verify and extract exactly the dynamic features the model was trained on
-        feature_values = []
-        for key in features:
-            if key not in data:
-                # If a feature is completely missing from incoming data, fill with mean (graceful degradation)
-                feature_values.append(stats['mean'].get(key, 0.0))
-            else:
-                try:
-                    feature_values.append(float(data[key]))
-                except (ValueError, TypeError):
-                    feature_values.append(stats['mean'].get(key, 0.0))
-
-        X = np.array([feature_values])
-        
-        # Scale features
-        if scaler:
-            X_scaled = scaler.transform(X)
-        else:
-            X_scaled = X
-        
-        # Detect model type and make appropriate predictions
-        model_type = type(model).__name__
-        is_anomaly = False
-        confidence = 50.0
-        
-        if 'RandomForest' in model_type:
-            # RandomForestClassifier: 0=normal, 1=anomaly
-            pred = model.predict(X_scaled)[0]
-            is_anomaly = bool(pred == 1)
-            
-            # Get probability scores for confidence
-            probs = model.predict_proba(X_scaled)[0]
-            confidence = round(max(probs) * 100, 1)
-            
-        elif 'IsolationForest' in model_type:
-            # IsolationForest: 1=normal, -1=anomaly
-            pred = model.predict(X_scaled)[0]
-            is_anomaly = bool(pred == -1)
-            
-            score = model.decision_function(X_scaled)[0]
-            # Map score to a confidence scale
-            if is_anomaly:
-                confidence = min(100, max(50, 50 + abs(score) * 200))
-            else:
-                confidence = min(100, max(50, 50 + score * 200))
-        
-        feature_importance_map = {}
-        if is_anomaly and stats:
-            # Map values back to a dict for importance calc
-            input_dict = {features[i]: feature_values[i] for i in range(len(features))}
-            feature_importance_map = get_feature_importance(input_dict, stats)
-            
-        return jsonify({
-            "anomaly": is_anomaly,
-            "confidence": round(confidence, 1),
-            "feature_importance": feature_importance_map,
-            "model_type": model_type
-        })
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/train', methods=['POST'])
+        import pandas as pd
+        record = frame(request.get_json(silent=True) or {})
+        probability = float(artifact['model'].predict_proba(pd.DataFrame([record]))[0][1])
+        anomaly = probability >= .5; confidence = max(probability, 1 - probability) * 100
+        importance = dict(list(artifact['feature_importance'].items())[:5])
+        recommendation = 'Schedule an inspection immediately.' if probability >= .7 else ('Inspect during the next maintenance window.' if anomaly else 'Continue normal monitoring.')
+        return jsonify(success=True, anomaly=anomaly, isAnomaly=anomaly, probability=round(probability * 100, 2), failureProbability=round(probability * 100, 2), anomalyScore=round(probability, 4), healthScore=round(100 - probability * 100, 2), confidence=round(confidence, 2), feature_importance=importance, recommendation=recommendation, model_type=artifact['model_name'])
+    except Exception as exc: return jsonify(success=False, error=str(exc)), 400
+@app.post('/train')
 def train():
-    global model, scaler, stats, features
-    try:
-        from sklearn.ensemble import IsolationForest
-        
-        body = request.json
-        rows = body.get('data', [])
-        
-        if not rows or len(rows) < 10:
-            return jsonify({"error": "Not enough data to train. Need at least 10 rows."}), 400
-            
-        df = pd.DataFrame(rows)
-        
-        # Select only numeric columns dynamically
-        numeric_df = df.select_dtypes(include=[np.number]).dropna(axis=1, how='all')
-        
-        # Fill missing numeric values with column means
-        numeric_df = numeric_df.fillna(numeric_df.mean())
-        
-        if numeric_df.empty:
-            return jsonify({"error": "No numeric data found to train."}), 400
-            
-        new_features = list(numeric_df.columns)
-        
-        # Fit scaler for better accuracy across different units
-        new_scaler = StandardScaler()
-        scaled_data = new_scaler.fit_transform(numeric_df)
-        
-        # Train robust Isolation Forest for dynamic retraining (unsupervised)
-        new_model = IsolationForest(n_estimators=150, contamination='auto', max_samples='auto', random_state=42)
-        new_model.fit(scaled_data)
-        
-        new_stats = {
-            'mean': numeric_df.mean().to_dict(),
-            'std': numeric_df.std().to_dict()
-        }
-        
-        # Save to disk
-        artifact = {
-            'model': new_model,
-            'scaler': new_scaler,
-            'stats': new_stats,
-            'features': new_features
-        }
-        
-        model_path = os.path.join(os.path.dirname(__file__), 'model.pkl')
-        with open(model_path, 'wb') as f:
-            pickle.dump(artifact, f)
-            
-        # Update global state in memory
-        model = new_model
-        scaler = new_scaler
-        stats = new_stats
-        features = new_features
-        
-        return jsonify({
-            "success": True, 
-            "message": "Model trained dynamically and updated successfully.",
-            "features_used": new_features,
-            "rows_processed": len(numeric_df)
-        })
-        
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/health', methods=['GET'])
-def health():
-    return jsonify({
-        "status": "ok", 
-        "model_loaded": model is not None,
-        "features": features
-    })
-
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5001))
-    app.run(host='0.0.0.0', port=port, debug=False)
+    global artifact
+    try: artifact = train_model(); return jsonify(success=True, data={'dataset': artifact['dataset'], 'metrics': artifact['metrics'], 'model': artifact['model_name']})
+    except Exception as exc: return jsonify(success=False, error=str(exc)), 500
+if __name__ == '__main__': app.run(host='0.0.0.0', port=int(__import__('os').environ.get('PORT', 5001)))

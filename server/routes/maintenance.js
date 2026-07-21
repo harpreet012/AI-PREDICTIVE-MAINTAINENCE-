@@ -9,11 +9,12 @@ router.use(protect);
 // GET all maintenance logs (with filters)
 router.get('/', async (req, res) => {
   try {
-    const { equipmentId, status, type, limit = 50, skip = 0 } = req.query;
+    const { equipmentId, status, type, datasetId, limit = 50, skip = 0 } = req.query;
     const filter = { userId: req.user._id };
     if (equipmentId) filter.equipmentId = equipmentId;
     if (status)      filter.status      = status;
     if (type)        filter.type        = type;
+    if (datasetId)    filter.datasetId    = datasetId;
 
     const logs = await MaintenanceLog.find(filter)
       .populate('equipmentId', 'name type location')

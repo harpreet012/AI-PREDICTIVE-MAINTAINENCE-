@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { equipmentAPI } from '../services/api';
-import { API_URL } from '../config';
+import { equipmentAPI, sensorAPI } from '../services/api';
 import PageTransition from '../components/PageTransition';
 import toast from 'react-hot-toast';
 
@@ -21,14 +20,12 @@ export default function DataInputPage() {
     noiseLevel: '',
   });
 
-  useEffect(() => {
-    fetchEquipment();
-  }, []);
+  useEffect(() => { let active = true; fetchEquipment(active); return () => { active = false; }; }, []);
 
-  const fetchEquipment = async () => {
+  const fetchEquipment = async (active = true) => {
     try {
       const res = await equipmentAPI.getAll();
-      setEquipment(res.data.data || []);
+      if (active) setEquipment(res.data.data || []);
     } catch (error) {
       console.error('Failed to fetch equipment:', error);
       toast.error('Failed to load equipment list');
@@ -55,24 +52,10 @@ export default function DataInputPage() {
 
     setLoading(true);
     try {
-      // Send data to backend for prediction using API_URL from config
-      const response = await fetch(`${API_URL}/upload`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('pm_token')}`,
-        },
-        body: JSON.stringify(data),
-      });
-
-      const result = await response.json();
+      const { data: result } = await sensorAPI.ingest(data);
       
       if (result.success) {
         toast.success('Data submitted successfully for prediction!');
-        // Store dataset ID for future reference
-        if (result.datasetId) {
-          localStorage.setItem('datasetId', result.datasetId);
-        }
         navigate('/');
       } else {
         toast.error(result.error || 'Failed to submit data');

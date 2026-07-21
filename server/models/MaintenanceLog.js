@@ -8,6 +8,12 @@ const maintenanceLogSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
+    datasetId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Dataset',
+      required: false,
+      index: true,
+    },
     equipmentId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Equipment',
@@ -46,5 +52,10 @@ const maintenanceLogSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+maintenanceLogSchema.index({ userId: 1, equipmentId: 1 });
+maintenanceLogSchema.index({ userId: 1, datasetId: 1 });
+maintenanceLogSchema.index({ datasetId: 1, scheduledDate: -1 });
+maintenanceLogSchema.index({ equipmentId: 1, status: 1 });
 
 module.exports = mongoose.model('MaintenanceLog', maintenanceLogSchema);

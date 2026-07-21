@@ -1,9 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import axios from 'axios';
-import { useAuth } from '../context/AuthContext';
+import api from '../services/api';
 import { Send, X, Minimize2, Maximize2, Trash2, ChevronDown } from 'lucide-react';
-import { API_URL } from '../config';
 
 const AIBotIcon = ({ size = 24, className }) => (
   <svg width={size} height={size} viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" className={className}>
@@ -132,7 +130,6 @@ export default function ChatBot() {
   const [showQuick, setShowQuick] = useState(true);
   const bottomRef  = useRef(null);
   const inputRef   = useRef(null);
-  const { token }  = useAuth();
 
   useEffect(() => {
     if (open) {
@@ -155,11 +152,7 @@ export default function ChatBot() {
     setTyping(true);
 
     try {
-      console.log('Sending to:', `${API_URL}/chat`);
-      const { data } = await axios.post(`${API_URL}/chat`,
-        { message: text, context: {} },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      const { data } = await api.post('/chat', { message: text, context: {} });
       console.log('Response:', data);
       const botMsg = {
         role: 'assistant',
@@ -181,7 +174,7 @@ export default function ChatBot() {
     } finally {
       setTyping(false);
     }
-  }, [input, typing, token, open]);
+  }, [input, typing, open]);
 
   const clearChat = () => {
     setMessages([{

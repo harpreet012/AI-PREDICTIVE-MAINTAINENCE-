@@ -8,11 +8,12 @@ router.use(protect);
 // GET all alerts (with filters)
 router.get('/', async (req, res) => {
   try {
-    const { severity, type, acknowledged, equipmentId, limit = 50, skip = 0 } = req.query;
+    const { severity, type, acknowledged, equipmentId, datasetId, limit = 50, skip = 0 } = req.query;
     const filter = { userId: req.user._id };
     if (severity)    filter.severity    = severity;
     if (type)        filter.type        = type;
     if (equipmentId) filter.equipmentId = equipmentId;
+    if (datasetId)    filter.datasetId    = datasetId;
     if (acknowledged !== undefined) filter.acknowledged = acknowledged === 'true';
 
     const alerts = await Alert.find(filter)

@@ -17,13 +17,7 @@ MONGODB_URI=mongodb://localhost:27017/predictive_maintenance
 PORT=5000
 ```
 
-### 2. Seed the Database
-```bash
-cd server
-npm run seed
-```
-
-### 3. Start the Backend
+### 2. Start the Backend
 ```bash
 cd server
 npm run dev
@@ -60,7 +54,6 @@ server/          Node.js + Express backend
     dataSimulator.js  Real-time IoT data simulation with fault injection
   config/
     db.js        MongoDB connection
-    seed.js      Database seeder (10 machines, 7-day history)
 ```
 
 ## 🤖 ML Engine Features

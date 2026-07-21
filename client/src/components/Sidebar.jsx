@@ -6,11 +6,13 @@ import {
   LayoutDashboard, Cpu, Bell, BarChart2,
   Wrench, Upload, Users, LogOut, Wifi, WifiOff,
   ChevronRight, AlertTriangle, Map, ScanSearch, CalendarDays,
+  Building2,
 } from 'lucide-react';
 import SidebarLiveGraph from './SidebarLiveGraph';
 
 const NAV = [
   { to: '/',             label: 'Dashboard',    icon: LayoutDashboard },
+  { to: '/asset-library', label: 'Asset Library', icon: Building2 },
   { to: '/equipment',    label: 'Equipment',    icon: Cpu },
   { to: '/digital-twin', label: 'Digital Twin', icon: Map },
   { to: '/alerts',       label: 'Alerts',       icon: Bell,         badge: 'alerts' },
@@ -21,8 +23,7 @@ const NAV = [
 ];
 
 const ADMIN_NAV = [
-  { to: '/data-input', label: 'Data Input', icon: Upload },
-  { to: '/import', label: 'Data Import', icon: Upload },
+  { to: '/data-import', label: 'Data Import', icon: Upload },
   { to: '/users',  label: 'Users',       icon: Users  },
 ];
 

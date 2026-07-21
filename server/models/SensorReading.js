@@ -8,6 +8,12 @@ const sensorReadingSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
+    datasetId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Dataset',
+      required: false,
+      index: true,
+    },
     equipmentId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Equipment',
@@ -41,6 +47,9 @@ const sensorReadingSchema = new mongoose.Schema(
 
 // TTL index to auto-expire old readings after 90 days
 sensorReadingSchema.index({ timestamp: 1 }, { expireAfterSeconds: 7776000 });
-sensorReadingSchema.index({ equipmentId: 1, timestamp: -1 });
+sensorReadingSchema.index({ userId: 1, equipmentId: 1, timestamp: -1 });
+sensorReadingSchema.index({ userId: 1, isAnomaly: 1, timestamp: -1 });
+sensorReadingSchema.index({ datasetId: 1, timestamp: -1 });
+sensorReadingSchema.index({ userId: 1, datasetId: 1 });
 
 module.exports = mongoose.model('SensorReading', sensorReadingSchema);

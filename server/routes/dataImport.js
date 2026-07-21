@@ -1,296 +1,344 @@
-const express  = require('express');
-const router   = express.Router();
-const multer   = require('multer');
-const XLSX     = require('xlsx');
-const Equipment = require('../models/Equipment');
-const SensorReading = require('../models/SensorReading');
-const { protect } = require('../middleware/auth');
-const axios = require('axios');
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+const express = require("express");
+const multer = require("multer");
+const XLSX = require("xlsx");
+const axios = require("axios");
+const Equipment = require("../models/Equipment");
+const SensorReading = require("../models/SensorReading");
+const Alert = require("../models/Alert");
+const Dataset = require("../models/Dataset");
+const { protect } = require("../middleware/auth");
 
-// Map ProductType from sample data to Equipment type enum
-const TYPE_MAP = {
-  'extruder':          'CNC Machine',
-  'pump':              'Pump',
-  'coil oven':         'Boiler',
-  'gauge machine':     'Compressor',
-  'pressure control':  'Compressor',
-  'pressure c':        'Compressor',
-  'gauge ma':          'Compressor',
-  'motor':             'Motor',
-  'turbine':           'Turbine',
-  'generator':         'Generator',
-  'conveyor':          'Conveyor',
-  'boiler':            'Boiler',
+const router = express.Router();
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+});
+
+const types = {
+  extruder: "CNC Machine",
+  pump: "Pump",
+  motor: "Motor",
+  turbine: "Turbine",
+  generator: "Generator",
+  conveyor: "Conveyor",
+  boiler: "Boiler",
 };
 
-function mapType(raw) {
-  if (!raw) return 'Compressor';
-  const lower = raw.toLowerCase();
-  for (const [key, val] of Object.entries(TYPE_MAP)) {
-    if (lower.startsWith(key)) return val;
-  }
-  return 'Compressor';
+const number = (value) => (Number.isFinite(Number(value)) ? Number(value) : 0);
+const normalize = (row) =>
+  Object.fromEntries(
+    Object.entries(row).map(([key, value]) => [
+      key.toLowerCase().replace(/[^a-z0-9]/g, ""),
+      value,
+    ]),
+  );
+
+function parse(file) {
+  const workbook = XLSX.read(file.buffer, { type: "buffer" });
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+  if (!rows.length) throw new Error("The file contains no data rows");
+  return rows;
 }
 
-// POST /api/import/preview  — parse and return rows without saving
-router.post('/preview', protect, upload.single('file'), (req, res) => {
+function equipmentType(value) {
+  return types[String(value || "").toLowerCase()] || "Compressor";
+}
+
+function payload(row) {
+  const r = normalize(row);
+  return {
+    temperature: number(r.temperature || r.airtemperaturek),
+    vibration: number(r.vibration || r.processtemperaturek),
+    pressure: number(r.pressure),
+    rpm: number(r.rpm || r.rotationalspeedrpm),
+    current: number(r.current || r.torquenm),
+    humidity: number(r.humidity),
+    noiseLevel: number(r.noiselevel) || 60,
+  };
+}
+
+// Keep this for future manual prediction feature
+async function predict(sensorData) {
+  const url = process.env.ML_SERVICE_URL || "http://localhost:5001/predict";
   try {
-    if (!req.file) return res.status(400).json({ success: false, error: 'No file uploaded' });
-    const wb   = XLSX.read(req.file.buffer, { type: 'buffer' });
-    const ws   = wb.Sheets[wb.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
-    res.json({ success: true, rows: rows.slice(0, 20), total: rows.length });
-  } catch (err) {
-    res.status(400).json({ success: false, error: 'Invalid file: ' + err.message });
+    return (await axios.post(url, sensorData, { timeout: 5000 })).data;
+  } catch (error) {
+    console.warn(`ML prediction unavailable: ${error.message}`);
+    return null;
   }
-});
+}
 
-// POST /api/import/equipment — parse + upsert equipment + readings
-router.post('/equipment', protect, upload.single('file'), async (req, res) => {
+router.use(protect);
+
+router.post("/preview", upload.single("file"), (req, res, next) => {
   try {
-    if (!req.file) return res.status(400).json({ success: false, error: 'No file uploaded' });
-
-    const wb   = XLSX.read(req.file.buffer, { type: 'buffer' });
-    const ws   = wb.Sheets[wb.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
-
-    if (!rows || rows.length === 0) return res.status(400).json({ success: false, error: 'Empty file' });
-
-    const equipBulkOps = [];
-    const equipmentDocs = [];
-    const serialsMap = new Map();
-
-    const genericDatasetId = `DS-${Math.random().toString(36).substr(2,6).toUpperCase()}`;
-    const datasetName = req.file.originalname || 'Imported Dataset';
-
-    // Compute basic stats for prediction of an anomaly on generic inputs
-    const numCols = {};
-    Object.keys(rows[0] || {}).forEach(k => {
-       if (typeof rows[0][k] === 'number') numCols[k] = { sum: 0, sumSq: 0, count: 0 };
-    });
-
-    for (const row of rows) {
-      for (const k in numCols) {
-        if (typeof row[k] === 'number') {
-           numCols[k].sum += row[k];
-           numCols[k].sumSq += row[k] * row[k];
-           numCols[k].count++;
-        }
-      }
-    }
-    const stats = {};
-    for (const k in numCols) {
-       if (numCols[k].count > 0) {
-         stats[k] = { mean: numCols[k].sum / numCols[k].count };
-         const variance = (numCols[k].sumSq / numCols[k].count) - (stats[k].mean * stats[k].mean);
-         stats[k].std = variance > 0 ? Math.sqrt(variance) : 0;
-       }
-    }
-
-    for (const row of rows) {
-      // Normalize column names (case-insensitive)
-      const r = {};
-      for (const [k, v] of Object.entries(row)) r[k.toLowerCase().trim()] = v;
-
-      let uid         = String(r['uid'] || r['id'] || '').trim();
-      let productType = String(r['producttype'] || r['product type'] || r['type'] || '').trim();
-
-      let serialNumber, equipType, equipName;
-      
-      const isGeneric = !uid && !productType;
-      
-      if (isGeneric) {
-         serialNumber = genericDatasetId;
-         equipType = 'Custom';
-         equipName = `Dataset: ${datasetName}`;
-      } else {
-         serialNumber = `IMPORT-${uid || Math.random().toString(36).substr(2,6).toUpperCase()}`;
-         equipType    = mapType(productType);
-         equipName    = `${productType || 'Machine'} #${uid}`;
-      }
-
-      if (!serialsMap.has(serialNumber)) {
-        equipBulkOps.push({
-          updateOne: {
-            filter: { serialNumber },
-            update: {
-              $setOnInsert: {
-                name:         equipName,
-                type:         equipType,
-                location:     'Data Import',
-                manufacturer: isGeneric ? 'Auto-Generated' : 'Imported',
-                serialNumber,
-              },
-              $set: {
-                userId:       req.user._id,
-                productType:  productType || 'Dataset',
-              }
-            },
-            upsert: true
-          }
-        });
-        serialsMap.set(serialNumber, true);
-      }
-
-      // Compute quick anomaly prediction
-      let maxZ = 0;
-      for (const k in stats) {
-        if (typeof row[k] === 'number' && stats[k].std > 0) {
-           const z = Math.abs(row[k] - stats[k].mean) / stats[k].std;
-           if (z > maxZ) maxZ = z;
-        }
-      }
-      
-      // Predict outcome heuristically: Z > 2.5 is anomaly
-      const isAnomaly = maxZ > 2.5;
-      const anomalyScore = Math.min(100, Math.round((maxZ / 3) * 100));
-      const healthScore = Math.max(0, 100 - anomalyScore);
-
-      equipmentDocs.push({
-        serialNumber,
-        originalData: row,
-        temperature: parseFloat(r['temperature']) || 0,
-        humidity:    parseFloat(r['humidity'])    || 0,
-        vibration:   parseFloat(r['vibration'])   || 0,
-        pressure:    parseFloat(r['pressure'])    || 0,
-        rpm:         parseFloat(r['rpm'])         || 0,
-        current:     parseFloat(r['current'])     || 0,
-        mttf:        parseFloat(r['mttf'])        || null,
-        isAnomaly,
-        anomalyScore: anomalyScore / 100, // DB expects 0-1
-        healthScore
-      });
-    }
-
-    // Execute Bulk Write for Equipment
-    let created = 0, updated = 0, readings = 0;
-    
-    if (equipBulkOps.length > 0) {
-      const result = await Equipment.bulkWrite(equipBulkOps);
-      created = result.upsertedCount || 0;
-      updated = result.modifiedCount || 0;
-    }
-
-    // Map serialNumbers to Database _ids
-    const serialsKeys = Array.from(serialsMap.keys());
-    const allEquipments = await Equipment.find({ serialNumber: { $in: serialsKeys } }, { _id: 1, serialNumber: 1 });
-    const idMap = new Map();
-    allEquipments.forEach(e => idMap.set(e.serialNumber, e._id));
-
-    // Prepare Sensor Readings
-    const readingsToInsert = [];
-    let nowTime = new Date().getTime();
-    
-    for (let i = 0; i < equipmentDocs.length; i++) {
-      const doc = equipmentDocs[i];
-      // Insert all rows as readings spaced by 1 second so charts look like timeseries
-      readingsToInsert.push({
-        userId:      req.user._id,
-        equipmentId: idMap.get(doc.serialNumber),
-        timestamp:   new Date(nowTime - ((equipmentDocs.length - i) * 1000)),
-        temperature: doc.temperature,
-        humidity:    doc.humidity,
-        vibration:   doc.vibration,
-        pressure:    doc.pressure,
-        rpm:         doc.rpm,
-        current:     doc.current,
-        healthScore: doc.healthScore,
-        anomalyScore: doc.anomalyScore,
-        isAnomaly:    doc.isAnomaly,
-        rawData:      doc.originalData // storing arbitrary generic columns here!
-      });
-    }
-
-    // Insert Sensor Readings in chunks
-    const CHUNK = 1000;
-    for (let i = 0; i < readingsToInsert.length; i += CHUNK) {
-      await SensorReading.insertMany(readingsToInsert.slice(i, i + CHUNK));
-    }
-    
-    readings = readingsToInsert.length;
-    
-    // Trigger dynamic background training to maintain peak accuracy on this dataset
-    const mlTrainUrl = (process.env.ML_SERVICE_URL ? process.env.ML_SERVICE_URL.replace('/predict', '') : 'http://localhost:5001') + '/train';
-    axios.post(mlTrainUrl, { data: rows }).catch(err => {
-      console.warn('Background ML training trigger failed:', err.message);
-    });
-
-    res.json({ success: true, message: `Data read & predictions processed`, created, updated, readings, total: rows.length });
-  } catch (err) {
-    console.error('Import error:', err);
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-// POST /api/upload - Single sensor data submission for real-time prediction
-router.post('/upload', protect, async (req, res) => {
-  try {
-    const { equipmentId, temperature, vibration, pressure, rpm, current, humidity, noiseLevel } = req.body;
-    
-    if (!equipmentId) {
-      return res.status(400).json({ success: false, error: 'Equipment ID is required' });
-    }
-
-    // Verify equipment exists
-    const equipment = await Equipment.findById(equipmentId);
-    if (!equipment) {
-      return res.status(404).json({ success: false, error: 'Equipment not found' });
-    }
-
-    // Create sensor reading
-    const reading = await SensorReading.create({
-      userId: req.user._id,
-      equipmentId,
-      timestamp: new Date(),
-      temperature: temperature || 0,
-      vibration: vibration || 0,
-      pressure: pressure || 0,
-      rpm: rpm || 0,
-      current: current || 0,
-      humidity: humidity || 50,
-      noiseLevel: noiseLevel || 60,
-    });
-
-    // Trigger ML prediction
-    const mlUrl = process.env.ML_SERVICE_URL || 'http://localhost:5001/predict';
-    try {
-      const mlResponse = await axios.post(mlUrl, {
-        equipmentId,
-        sensorData: {
-          temperature, vibration, pressure, rpm, current, humidity, noiseLevel
-        }
-      });
-      
-      // Update reading with ML results
-      if (mlResponse.data) {
-        reading.healthScore = mlResponse.data.healthScore || 100;
-        reading.anomalyScore = mlResponse.data.anomalyScore || 0;
-        reading.isAnomaly = mlResponse.data.isAnomaly || false;
-        reading.failureProbability = mlResponse.data.failureProbability || 0;
-        await reading.save();
-      }
-    } catch (mlError) {
-      console.warn('ML prediction failed, using default values:', mlError.message);
-    }
-
-    // Generate dataset ID for tracking
-    const datasetId = `DS-${Date.now()}`;
-
-    res.json({ 
-      success: true, 
-      message: 'Sensor data submitted successfully',
-      datasetId,
-      reading: {
-        id: reading._id,
-        healthScore: reading.healthScore,
-        anomalyScore: reading.anomalyScore,
-        isAnomaly: reading.isAnomaly
-      }
+    if (!req.file)
+      return res
+        .status(400)
+        .json({ success: false, error: "A CSV or Excel file is required" });
+    const rows = parse(req.file);
+    return res.json({
+      success: true,
+      data: {
+        rows: rows.slice(0, 20),
+        total: rows.length,
+        columns: Object.keys(rows[0]),
+      },
     });
   } catch (error) {
-    console.error('Upload error:', error);
-    res.status(500).json({ success: false, error: error.message });
+    return next(error);
+  }
+});
+
+router.post("/equipment", upload.single("file"), async (req, res, next) => {
+  const startTime = Date.now();
+
+  try {
+    if (!req.file)
+      return res
+        .status(400)
+        .json({ success: false, error: "A CSV or Excel file is required" });
+
+    // Extract factory information from request body
+    const { factoryName, location, description } = req.body;
+    
+    if (!factoryName || !location) {
+      return res.status(400).json({ 
+        success: false, 
+        error: "Factory name and location are required" 
+      });
+    }
+
+    const rows = parse(req.file);
+    const importKey = `${req.user._id}-${req.file.originalname}`;
+
+    // Create Dataset record
+    const dataset = await Dataset.create({
+      userId: req.user._id,
+      factoryName,
+      location,
+      description: description || '',
+      originalFileName: req.file.originalname,
+      fileSize: req.file.size,
+      status: 'processing',
+      machineCount: 0,
+      sensorCount: 0,
+      alertCount: 0,
+      maintenanceCount: 0,
+    });
+
+    // Create/Update Equipment with datasetId
+    const equipmentBySerial = new Map();
+    rows.forEach((row, index) => {
+      const r = normalize(row);
+      const uid =
+        r.productid ||
+        r.udi ||
+        r.machineid ||
+        r.uid ||
+        r.id ||
+        `machine-${index}`;
+
+      const serial = `IMPORT-${importKey}-${String(uid)}`.slice(0, 180);
+
+      if (!equipmentBySerial.has(serial)) {
+        equipmentBySerial.set(serial, {
+          serial,
+          name: `${r.productid || r.type || "Imported machine"} #${uid}`,
+          type: equipmentType(r.producttype || r.type),
+        });
+      }
+    });
+
+    const operations = [...equipmentBySerial.values()].map((item) => ({
+      updateOne: {
+        filter: { userId: req.user._id, serialNumber: item.serial },
+        update: {
+          $setOnInsert: {
+            userId: req.user._id,
+            datasetId: dataset._id,
+            serialNumber: item.serial,
+            name: item.name,
+            type: item.type,
+            location: location,
+            manufacturer: "Imported",
+            isActive: true,
+          },
+        },
+        upsert: true,
+      },
+    }));
+
+    const write = await Equipment.bulkWrite(operations, { ordered: false });
+
+    const equipment = await Equipment.find({
+      userId: req.user._id,
+      serialNumber: { $in: [...equipmentBySerial.keys()] },
+    })
+      .select("_id serialNumber")
+      .lean();
+
+    const ids = new Map(equipment.map((item) => [item.serialNumber, item._id]));
+
+    // Create Sensor Readings with datasetId
+    const readings = rows.map((row, index) => {
+      const r = normalize(row);
+      const uid =
+        r.productid ||
+        r.udi ||
+        r.machineid ||
+        r.uid ||
+        r.id ||
+        `machine-${index}`;
+
+      const serial = `IMPORT-${importKey}-${String(uid)}`.slice(0, 180);
+
+      const sensorData = payload(row);
+
+      return {
+        userId: req.user._id,
+        datasetId: dataset._id,
+        equipmentId: ids.get(serial),
+        timestamp: new Date(),
+        ...sensorData,
+        rawData: row,
+        healthScore: 100,
+        anomalyScore: 0,
+        isAnomaly: false,
+        failureProbability: 0,
+        predictedFailureIn: null,
+      };
+    });
+
+    // Batch Insert Readings
+    const BATCH_SIZE = 1000;
+    for (let i = 0; i < readings.length; i += BATCH_SIZE) {
+      await SensorReading.insertMany(readings.slice(i, i + BATCH_SIZE), {
+        ordered: false,
+      });
+    }
+
+    // Safe Bulk Update for Equipment
+    const bulkEquipmentUpdates = [
+      ...new Set(
+        readings
+          .map((r) => r.equipmentId)
+          .filter(Boolean)
+          .map(String),
+      ),
+    ].map((id) => ({
+      updateOne: {
+        filter: {
+          _id: id,
+          userId: req.user._id,
+        },
+        update: {
+          $set: {
+            healthScore: 100,
+            failureProbability: 0,
+            predictedFailureIn: null,
+            status: "healthy",
+          },
+        },
+      },
+    }));
+
+    if (bulkEquipmentUpdates.length > 0) {
+      await Equipment.bulkWrite(bulkEquipmentUpdates, { ordered: false });
+    }
+
+    // Update Dataset statistics
+    const machineCount = write.upsertedCount || 0;
+    const sensorCount = readings.length;
+    
+    // Calculate average health score
+    const equipmentWithHealth = await Equipment.find({ 
+      datasetId: dataset._id, 
+      isActive: true 
+    }).select('healthScore');
+    
+    const avgHealth = equipmentWithHealth.length > 0 
+      ? Math.round(equipmentWithHealth.reduce((sum, eq) => sum + (eq.healthScore || 100), 0) / equipmentWithHealth.length)
+      : 100;
+
+    await Dataset.findByIdAndUpdate(dataset._id, {
+      machineCount,
+      sensorCount,
+      healthScore: avgHealth,
+      status: 'active',
+      lastUpdated: new Date()
+    });
+
+    const duration = Date.now() - startTime;
+
+    return res.status(201).json({
+      success: true,
+      data: {
+        datasetId: dataset._id,
+        dataset,
+        equipmentCreated: write.upsertedCount || 0,
+        equipmentUpdated: write.modifiedCount || 0,
+        sensorReadingsImported: readings.length,
+        totalRows: rows.length,
+        alertsCreated: 0,
+        duration: `${duration} ms`,
+        mlPrediction: false,
+        predictionStatus: "Skipped",
+      },
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post("/reading", async (req, res, next) => {
+  try {
+    const equipment = await Equipment.findOne({
+      _id: req.body.equipmentId,
+      userId: req.user._id,
+    });
+    if (!equipment)
+      return res
+        .status(404)
+        .json({ success: false, error: "Equipment not found" });
+
+    const sensorData = payload(req.body);
+    const prediction = await predict(sensorData);
+    const probability = Number(
+      prediction?.failureProbability ?? prediction?.probability ?? 0,
+    );
+
+    const reading = await SensorReading.create({
+      userId: req.user._id,
+      datasetId: equipment.datasetId,
+      equipmentId: equipment._id,
+      ...sensorData,
+      rawData: req.body,
+      healthScore: Number(prediction?.healthScore ?? 100 - probability),
+      anomalyScore: Number(prediction?.anomalyScore ?? probability / 100),
+      isAnomaly: Boolean(prediction?.isAnomaly ?? prediction?.anomaly),
+      failureProbability: probability,
+      predictedFailureIn: prediction?.predictedFailureIn ?? null,
+    });
+
+    await Equipment.updateOne(
+      { _id: equipment._id },
+      {
+        $set: {
+          healthScore: reading.healthScore,
+          failureProbability: reading.failureProbability,
+          predictedFailureIn: reading.predictedFailureIn,
+          status: reading.isAnomaly ? "warning" : "healthy",
+        },
+      },
+    );
+
+    return res
+      .status(201)
+      .json({ success: true, data: { reading, prediction } });
+  } catch (error) {
+    return next(error);
   }
 });
 

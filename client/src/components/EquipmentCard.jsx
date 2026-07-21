@@ -6,36 +6,11 @@ import { equipmentAPI } from '../services/api';
 import { formatDistanceToNow } from 'date-fns';
 import { motion } from 'framer-motion';
 import { Trash2 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, memo, useCallback } from 'react';
 import toast from 'react-hot-toast';
+import { EQUIPMENT_TYPE_ICONS, STATUS_COLORS, STATUS_BORDER, STATUS_GLOW } from '../constants';
 
-const TYPE_ICONS = {
-  'Compressor':  '🔵',
-  'Motor':       '⚡',
-  'Pump':        '💧',
-  'Turbine':     '🌀',
-  'Generator':   '🔋',
-  'Conveyor':    '📦',
-  'CNC Machine': '⚙️',
-  'Boiler':      '🔥',
-  'Extruder':    '🏗️',
-};
-
-const STATUS_GLOW = {
-  healthy:     '0 0 20px rgba(16,185,129,0.15)',
-  warning:     '0 0 20px rgba(245,158,11,0.2)',
-  critical:    '0 0 24px rgba(239,68,68,0.25)',
-  offline:     'none',
-  maintenance: '0 0 20px rgba(139,92,246,0.2)',
-};
-
-const STATUS_BORDER = {
-  healthy:     'rgba(16,185,129,0.3)',
-  warning:     'rgba(245,158,11,0.35)',
-  critical:    'rgba(239,68,68,0.45)',
-  offline:     'rgba(100,116,139,0.2)',
-  maintenance: 'rgba(139,92,246,0.35)',
-};
+const TYPE_ICONS = EQUIPMENT_TYPE_ICONS;
 
 function SensorPill({ label, value, unit = '', warn = false, danger = false }) {
   const color = danger ? '#ef4444' : warn ? '#f59e0b' : '#94a3b8';
@@ -49,7 +24,7 @@ function SensorPill({ label, value, unit = '', warn = false, danger = false }) {
   );
 }
 
-export default function EquipmentCard({ equipment, index = 0, onDeleted, canDelete = false }) {
+const EquipmentCard = memo(function EquipmentCard({ equipment, index = 0, onDeleted, canDelete = false }) {
   const navigate = useNavigate();
   const { liveReadings } = useSocket();
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -60,7 +35,7 @@ export default function EquipmentCard({ equipment, index = 0, onDeleted, canDele
   const status      = live.status      ?? equipment.status      ?? 'healthy';
   const failureProb = live.failureProbability ?? equipment.failureProbability ?? 0;
 
-  const handleDelete = async (e) => {
+  const handleDelete = useCallback(async (e) => {
     e.stopPropagation();
     setDeleting(true);
     try {
@@ -73,7 +48,7 @@ export default function EquipmentCard({ equipment, index = 0, onDeleted, canDele
       setDeleting(false);
       setConfirmOpen(false);
     }
-  };
+  }, [equipment._id, equipment.name, onDeleted]);
 
   return (
     <motion.div
@@ -205,4 +180,6 @@ export default function EquipmentCard({ equipment, index = 0, onDeleted, canDele
       />
     </motion.div>
   );
-}
+});
+
+export default EquipmentCard;

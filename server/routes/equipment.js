@@ -11,11 +11,12 @@ router.use(protect);
 // GET all equipment (Paginated)
 router.get('/', async (req, res) => {
   try {
-    const { page = 1, limit = 50, search, type, status } = req.query;
+    const { page = 1, limit = 50, search, type, status, datasetId } = req.query;
     
     const query = { isActive: true, userId: req.user._id };
     if (type && type !== 'All') query.type = type;
     if (status && status !== 'All') query.status = status;
+    if (datasetId) query.datasetId = datasetId;
     if (search) {
       query.$or = [
         { name: { $regex: search, $options: 'i' } },

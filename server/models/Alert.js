@@ -8,6 +8,12 @@ const alertSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
+    datasetId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Dataset',
+      required: false,
+      index: true,
+    },
     equipmentId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Equipment',
@@ -45,5 +51,10 @@ const alertSchema = new mongoose.Schema(
 
 alertSchema.index({ acknowledged: 1 });
 alertSchema.index({ equipmentId: 1, resolved: 1 });
+alertSchema.index({ userId: 1, createdAt: -1 });
+alertSchema.index({ severity: 1, acknowledged: 1 });
+alertSchema.index({ type: 1, createdAt: -1 });
+alertSchema.index({ datasetId: 1, createdAt: -1 });
+alertSchema.index({ userId: 1, datasetId: 1 });
 
 module.exports = mongoose.model('Alert', alertSchema);
